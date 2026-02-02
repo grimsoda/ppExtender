@@ -112,9 +112,9 @@ def temp_parquet_file(tmp_path):
     """Create a temporary Parquet file from data."""
 
     def _create(data, filename="test_scores.parquet"):
-        batch = pa.RecordBatch.from_pydict(data)
+        table = pa.Table.from_pydict(data)
         output_path = tmp_path / filename
-        pq.write_table(batch.to_table(), output_path)
+        pq.write_table(table, output_path)
         return output_path
 
     return _create
@@ -284,10 +284,10 @@ def test_load_parquet_glob_pattern(temp_warehouse_dir, temp_parquet_dir):
         "speed_mod": [None, None],
     }
 
-    batch1 = pa.RecordBatch.from_pydict(data1)
-    batch2 = pa.RecordBatch.from_pydict(data2)
-    pq.write_table(batch1.to_table(), temp_parquet_dir / "part-000001.parquet")
-    pq.write_table(batch2.to_table(), temp_parquet_dir / "part-000002.parquet")
+    table1 = pa.Table.from_pydict(data1)
+    table2 = pa.Table.from_pydict(data2)
+    pq.write_table(table1, temp_parquet_dir / "part-000001.parquet")
+    pq.write_table(table2, temp_parquet_dir / "part-000002.parquet")
 
     pipeline = DuckDBPipeline(
         warehouse_dir=str(temp_warehouse_dir), database_name="osu"
@@ -890,8 +890,8 @@ def test_create_pipeline_convenience_function(temp_warehouse_dir, temp_parquet_d
         "mods_key": ["", "", ""],
         "speed_mod": [None, None, None],
     }
-    batch = pa.RecordBatch.from_pydict(data)
-    pq.write_table(batch.to_table(), temp_parquet_dir / "scores.parquet")
+    table = pa.Table.from_pydict(data)
+    pq.write_table(table, temp_parquet_dir / "scores.parquet")
 
     # Run convenience function
     manifest = create_pipeline(
