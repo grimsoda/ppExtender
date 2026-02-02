@@ -3,3 +3,4 @@ tmp/*
 .sisyphus/*
 Plan.md
 data/
+venv/
