@@ -435,12 +435,26 @@ def parse_sql_file(
     """
     parser = SqlParser(table_name)
     batch_rows = []
+    total_rows = 0
+    last_log_rows = 0
+    start_time = time.time()
 
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
             row = parser.parse_line(line)
             if row:
                 batch_rows.append(row)
+                total_rows += 1
+
+                # Log progress every 100,000 rows
+                if total_rows - last_log_rows >= 100000:
+                    elapsed = time.time() - start_time
+                    rate = total_rows / elapsed if elapsed > 0 else 0
+                    logger.info(
+                        f"  Progress: {total_rows:,} rows ({elapsed:.1f}s, ~{rate:,.0f} rows/sec)"
+                    )
+                    last_log_rows = total_rows
+
                 if len(batch_rows) >= batch_size:
                     cols = columns if columns else parser.columns
                     yield _rows_to_batch(batch_rows, cols)

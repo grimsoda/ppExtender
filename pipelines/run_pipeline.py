@@ -110,7 +110,17 @@ class PipelineRunner:
                 logger.warning(f"  ⚠ Skipping {table} - SQL file not found: {sql_path}")
                 continue
 
-            logger.info(f"Processing {table}...")
+            # Get file size
+            file_size = sql_path.stat().st_size
+            file_size_mb = file_size / (1024 * 1024)
+            file_size_gb = file_size / (1024 * 1024 * 1024)
+
+            if file_size_gb >= 1:
+                size_str = f"{file_size_gb:.1f} GB"
+            else:
+                size_str = f"{file_size_mb:.0f} MB"
+
+            logger.info(f"Processing {table} ({size_str})...")
 
             if dry_run:
                 logger.info(f"  [DRY RUN] Would parse {sql_path} → {output_dir}")
