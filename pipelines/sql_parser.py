@@ -57,7 +57,11 @@ class SqlParser:
             if self._state == ParserState.SEARCH_INSERT:
                 self.insert_buffer += char
                 upper_buffer = self.insert_buffer.upper()
-                if "INSERT" in upper_buffer and "INTO" in upper_buffer:
+
+                # Clear buffer on semicolon (end of statement) to prevent infinite growth
+                if char == ";":
+                    self.insert_buffer = ""
+                elif "INSERT" in upper_buffer and "INTO" in upper_buffer:
                     pattern = (
                         rf"INSERT\s+INTO\s+[`\"']?{re.escape(self.table_name)}[`\"']?"
                     )
