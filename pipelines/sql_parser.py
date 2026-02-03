@@ -238,6 +238,13 @@ class SqlParser:
             return self.rows.pop(0)
         return None
 
+    def parse_line_bulk(self, line: str) -> list:
+        """Parse a line and return all rows found (for bulk operations)."""
+        self.feed(line)
+        rows = self.rows[:]
+        self.rows = []
+        return rows
+
     def parse_value(self, value_str: str) -> Any:
         """Parse a field value string into Python type."""
         value_str = value_str.strip()
@@ -443,10 +450,23 @@ def parse_sql_file(
     last_log_rows = 0
     start_time = time.time()
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    # Use larger buffer size for large files
+    buffer_size = 1024 * 1024 * 8  # 8MB buffer
+
+    with open(file_path, "r", encoding="utf-8", buffering=buffer_size) as f:
+        line_count = 0
         for line in f:
-            row = parser.parse_line(line)
-            if row:
+            line_count += 1
+            # Log line progress every 100 lines for large files
+            if line_count % 100 == 0:
+                elapsed = time.time() - start_time
+                logger.debug(
+                    f"  Processing line {line_count:,} ({len(line)} chars, {elapsed:.1f}s)"
+                )
+
+            # Process all rows from this line
+            rows_from_line = parser.parse_line_bulk(line)
+            for row in rows_from_line:
                 batch_rows.append(row)
                 total_rows += 1
 
