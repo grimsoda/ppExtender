@@ -1,4 +1,4 @@
-"""Streaming SQL parser for osu! scores data."""
+"""Streaming SQL parser for osu! scores data - DEPRECATED: Use sql_parser_fast.py instead."""
 
 import json
 import logging
@@ -436,56 +436,9 @@ def parse_sql_file(
     batch_size: int = 100000,
     columns: Optional[list] = None,
 ) -> Iterator[pa.RecordBatch]:
-    """
-    Stream parse SQL file and yield RecordBatches.
-
-    Args:
-        file_path: Path to SQL file
-        table_name: Name of table to parse (e.g., 'scores')
-        batch_size: Number of rows per batch
-        columns: Optional column schema
-
-    Yields:
-        PyArrow RecordBatch objects
-    """
-    parser = SqlParser(table_name)
-    batch_rows = []
-    total_rows = 0
-    last_log_rows = 0
-    start_time = time.time()
-
-    # Use larger buffer size for large files
-    buffer_size = 1024 * 1024 * 8  # 8MB buffer
-
-    with open(file_path, "r", encoding="utf-8", buffering=buffer_size) as f:
-        line_count = 0
-        for line in f:
-            line_count += 1
-            # Log line progress every 100 lines for large files
-            if line_count % 100 == 0:
-                elapsed = time.time() - start_time
-                logger.debug(
-                    f"  Processing line {line_count:,} ({len(line)} chars, {elapsed:.1f}s)"
-                )
-
-            # Process all rows from this line
-            rows_from_line = parser.parse_line_bulk(line)
-            for row in rows_from_line:
-                batch_rows.append(row)
-                total_rows += 1
-
-                # Log progress every 100,000 rows
-                if total_rows - last_log_rows >= 100000:
-                    elapsed = time.time() - start_time
-                    rate = total_rows / elapsed if elapsed > 0 else 0
-                    logger.info(
-                        f"  Progress: {total_rows:,} rows ({elapsed:.1f}s, ~{rate:,.0f} rows/sec)"
-                    )
-                    last_log_rows = total_rows
-
-                if len(batch_rows) >= batch_size:
-                    cols = columns if columns else parser.columns
-                    yield _rows_to_batch(batch_rows, cols)
+    """Use fast regex-based parser instead of slow character-by-character parser."""
+    from pipelines.sql_parser_fast import parse_sql_file_fast
+    yield from parse_sql_file_fast(file_path, table_name, batch_size, columns)
                     batch_rows = []
 
     if batch_rows:
