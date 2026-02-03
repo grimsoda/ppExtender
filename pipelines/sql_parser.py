@@ -1,11 +1,15 @@
 """Streaming SQL parser for osu! scores data."""
 
 import json
+import logging
 import re
+import time
 from enum import Enum, auto
 from pathlib import Path
 from typing import Iterator, Optional, Any
 import pyarrow as pa
+
+logger = logging.getLogger(__name__)
 
 
 class ParserState(Enum):
