@@ -23,7 +23,7 @@
     "pipeline:full": "npm run etl:full && npm run backend:build && npm run frontend:build",
     "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
     "setup": "pip install pyarrow duckdb pytest pytest-cov requests && cd server && npm install && cd ../app && npm install",
-    "clean": "rm -rf data/ingest/2026-02/bronze_parquet data/warehouse/2026-02 server/dist app/dist",
+    "clean": "rm -rf server/dist app/dist && echo \"NOTE: we did not clear the follow dirs: data/ingest/2026-02/bronze_parquet  data/warehouse/2026-02\"",
     "reset": "npm run clean && rm -rf venv server/node_modules app/node_modules"
   },
   "keywords": ["osu", "recommender", "etl", "duckdb", "react"],
