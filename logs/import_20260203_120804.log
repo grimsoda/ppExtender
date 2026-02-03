@@ -1,0 +1,14 @@
+2026-02-03 12:08:04 [INFO] Logging to: /run/media/work/OS/ppExtender/logs/import_20260203_120804.log
+
+========================================
+Parallel LOAD DATA INFILE
+========================================
+2026-02-03 12:08:04 [INFO] Checking dependencies...
+2026-02-03 12:08:04 [SUCCESS] All dependencies found
+
+========================================
+Database Setup
+========================================
+2026-02-03 12:08:04 [INFO] Creating database 'osu_import'...
+2026-02-03 12:08:04 [SUCCESS] Database created
+2026-02-03 12:08:04 [INFO] Applying optimized session settings...

@@ -13,10 +13,17 @@ PROJECT_DIR="/run/media/work/OS/ppExtender"
 DATA_DIR="${PROJECT_DIR}/data"
 SQL_DIR="${DATA_DIR}/ingest/2026-02/sql"
 PARQUET_DIR="${DATA_DIR}/parquet"
-DB_NAME="osu_import"
-DB_USER="root"
-DB_HOST="localhost"
+DB_NAME="${DB_NAME:-test}"
+DB_USER="${DB_USER:-}"
+DB_HOST="${DB_HOST:-localhost}"
 LOG_DIR="${PROJECT_DIR}/logs"
+
+# DuckDB path (use project bin or PATH)
+if [[ -f "${PROJECT_DIR}/bin/duckdb" ]]; then
+    DUCKDB_CMD="${PROJECT_DIR}/bin/duckdb"
+else
+    DUCKDB_CMD="duckdb"
+fi
 
 # Performance settings
 PARALLEL_JOBS=4
@@ -41,26 +48,24 @@ log_section() {
     echo -e "${CYAN}========================================${NC}"
 }
 
-# Validate environment
 validate_environment() {
     log_info "Validating environment..."
-    
-    if ! command -v duckdb &> /dev/null; then
-        log_error "DuckDB not found. Install with: pip install duckdb"
+
+    if [[ ! -f "$DUCKDB_CMD" ]] && ! command -v duckdb &> /dev/null; then
+        log_error "DuckDB not found. Install with: curl -L https://github.com/duckdb/duckdb/releases/download/v1.1.3/duckdb_cli-linux-amd64.zip -o /tmp/duckdb.zip && unzip -o /tmp/duckdb.zip -d /tmp/ && mv /tmp/duckdb ${PROJECT_DIR}/bin/"
         exit 1
     fi
-    
+
     if ! command -v mariadb &> /dev/null && ! command -v mysql &> /dev/null; then
         log_error "MariaDB/MySQL client not found"
         exit 1
     fi
-    
-    # Check if MariaDB is running
+
     if ! systemctl is-active --quiet mariadb 2>/dev/null && ! systemctl is-active --quiet mysql 2>/dev/null; then
         log_error "MariaDB/MySQL service is not running"
         exit 1
     fi
-    
+
     mkdir -p "$PARQUET_DIR" "$LOG_DIR"
     log_success "Environment validated"
 }
@@ -70,14 +75,19 @@ phase1_mysql_import() {
     log_section "Phase 1: Import SQL to MySQL"
     
     log_info "Creating database '${DB_NAME}'..."
-    mariadb -u${DB_USER} -e "DROP DATABASE IF EXISTS ${DB_NAME};" 2>/dev/null || true
-    mariadb -u${DB_USER} -e "CREATE DATABASE ${DB_NAME} CHARACTER SET utf8mb4;"
-    
-    log_info "Applying optimized session settings..."
-    mariadb -u${DB_USER} ${DB_NAME} << 'EOF'
+    if [[ -n "${DB_USER}" ]]; then
+        mariadb -u${DB_USER} -e "DROP DATABASE IF EXISTS ${DB_NAME};" 2>/dev/null || true
+        mariadb -u${DB_USER} -e "CREATE DATABASE ${DB_NAME} CHARACTER SET utf8mb4;"
+        
+        log_info "Applying optimized session settings..."
+        mariadb -u${DB_USER} ${DB_NAME} << 'EOF'
 SET GLOBAL innodb_flush_log_at_trx_commit = 0;
 SET GLOBAL innodb_doublewrite = 0;
 EOF
+    else
+        mariadb -e "DROP DATABASE IF EXISTS ${DB_NAME};" 2>/dev/null || true
+        mariadb -e "CREATE DATABASE ${DB_NAME} CHARACTER SET utf8mb4;"
+    fi
     
     # Get list of SQL files
     local tables=(
@@ -112,7 +122,12 @@ EOF
         log_info "Importing ${table} (${size_mb}MB)..."
         local table_start=$(date +%s)
         
-        if mariadb -u${DB_USER} ${DB_NAME} < "$sql_file" 2>&1; then
+        local mysql_cmd="mariadb"
+        if [[ -n "${DB_USER}" ]]; then
+            mysql_cmd="mariadb -u${DB_USER}"
+        fi
+        
+        if $mysql_cmd ${DB_NAME} < "$sql_file" 2>&1; then
             local table_end=$(date +%s)
             local table_duration=$((table_end - table_start))
             log_success "Imported ${table} in ${table_duration}s"
@@ -132,22 +147,14 @@ phase2_duckdb_export() {
     
     log_info "Installing DuckDB MySQL extension..."
     
-    # Create DuckDB script for parallel export
-    local duckdb_script=$(cat << 'DUCKDB_SCRIPT'
--- Install and load MySQL extension
-INSTALL mysql;
-LOAD mysql;
-
--- Attach to MySQL database
-ATTACH 'host=localhost user=root database=osu_import' AS mysqldb (TYPE mysql);
-
--- Show tables
-SHOW TABLES FROM mysqldb;
-DUCKDB_SCRIPT
-)
+    # Build connection string
+    local conn_string="host=${DB_HOST} database=${DB_NAME}"
+    if [[ -n "${DB_USER}" ]]; then
+        conn_string="${conn_string} user=${DB_USER}"
+    fi
     
     log_info "Testing DuckDB MySQL connection..."
-    if ! echo "$duckdb_script" | duckdb -csv 2>&1 | head -20; then
+    if ! echo "INSTALL mysql; LOAD mysql; ATTACH '${conn_string}' AS mysqldb (TYPE mysql); SELECT 1 as test;" | "$DUCKDB_CMD" -csv 2>&1 | head -20; then
         log_error "Failed to connect to MySQL via DuckDB"
         exit 1
     fi
@@ -155,7 +162,11 @@ DUCKDB_SCRIPT
     log_success "DuckDB MySQL connection successful"
     
     # Get table list
-    local tables=$(mariadb -u${DB_USER} ${DB_NAME} -N -e "SHOW TABLES;" 2>/dev/null)
+    local mysql_cmd="mariadb"
+    if [[ -n "${DB_USER}" ]]; then
+        mysql_cmd="mariadb -u${DB_USER}"
+    fi
+    local tables=$($mysql_cmd ${DB_NAME} -N -e "SHOW TABLES;" 2>/dev/null)
     
     log_info "Exporting tables to Parquet..."
     local start_time=$(date +%s)
@@ -167,10 +178,10 @@ DUCKDB_SCRIPT
         local output_file="${PARQUET_DIR}/${table}.parquet"
         
         # Use DuckDB to copy from MySQL to Parquet
-        duckdb -c "
+        "$DUCKDB_CMD" -c "
             INSTALL mysql;
             LOAD mysql;
-            ATTACH 'host=localhost user=root database=${DB_NAME}' AS mysqldb (TYPE mysql);
+            ATTACH '${conn_string}' AS mysqldb (TYPE mysql);
             
             COPY (
                 SELECT * FROM mysqldb.${table}
