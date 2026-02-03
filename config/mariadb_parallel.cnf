@@ -1,0 +1,126 @@
+# MariaDB Configuration for Parallel Import
+#
+# This configuration is optimized for maximum import speed using
+# parallel LOAD DATA INFILE. Use only during initial data loading.
+#
+# Usage:
+#   1. Stop MariaDB: sudo systemctl stop mariadb
+#   2. Backup current config: sudo cp /etc/mysql/mariadb.conf.d/50-server.cnf /etc/mysql/mariadb.conf.d/50-server.cnf.bak
+#   3. Apply this config: sudo cp config/mariadb_parallel.cnf /etc/mysql/mariadb.conf.d/50-server.cnf
+#   4. Start MariaDB: sudo systemctl start mariadb
+#   5. Run import: ./scripts/import_parallel.sh --all
+#   6. Restore original config after import
+#
+# WARNING: These settings prioritize speed over durability.
+# DO NOT use in production - data loss may occur on crash!
+
+[mysqld]
+# ============================================================================
+# MEMORY SETTINGS
+# ============================================================================
+
+# InnoDB Buffer Pool - Should be 70-80% of available RAM
+# For 16GB system, use 8-12GB
+innodb_buffer_pool_size = 8G
+
+# InnoDB Log File Size - Larger = better write performance
+innodb_log_file_size = 2G
+innodb_log_buffer_size = 64M
+
+# Additional memory pools
+innodb_sort_buffer_size = 64M
+sort_buffer_size = 64M
+read_buffer_size = 2M
+read_rnd_buffer_size = 8M
+join_buffer_size = 8M
+
+# ============================================================================
+# PERFORMANCE SETTINGS (DANGER: Data loss possible on crash!)
+# ============================================================================
+
+# Don't flush to disk on every transaction (major speedup)
+innodb_flush_log_at_trx_commit = 0
+
+# Disable doublewrite buffer for import (major speedup)
+# WARNING: Only for initial import, not production!
+innodb_doublewrite = 0
+
+# Use O_DIRECT for I/O
+innodb_flush_method = O_DIRECT
+
+# Larger page size for bulk operations
+innodb_page_size = 16K
+
+# ============================================================================
+# PARALLEL I/O SETTINGS
+# ============================================================================
+
+# Number of I/O threads for reads and writes
+innodb_read_io_threads = 16
+innodb_write_io_threads = 16
+
+# I/O capacity for SSDs
+innodb_io_capacity = 2000
+innodb_io_capacity_max = 4000
+
+# Concurrency settings
+innodb_thread_concurrency = 0  # 0 = unlimited
+innodb_concurrency_tickets = 5000
+
+# ============================================================================
+# BULK INSERT SETTINGS
+# ============================================================================
+
+# Buffer size for bulk inserts
+bulk_insert_buffer_size = 512M
+
+# Maximum packet size (increase for large INSERTs)
+max_allowed_packet = 1G
+
+# Connection limit
+max_connections = 200
+
+# ============================================================================
+# LOGGING (Disable for import speed)
+# ============================================================================
+
+# Disable binary logging
+skip-log-bin
+
+# Disable slow query log
+slow_query_log = 0
+
+# General log off
+general_log = 0
+
+# ============================================================================
+# OTHER OPTIMIZATIONS
+# ============================================================================
+
+# Don't check client connections on every query
+skip-name-resolve
+
+# Faster temp table handling
+tmp_table_size = 256M
+max_heap_table_size = 256M
+
+# Query cache (disable for import)
+query_cache_type = 0
+query_cache_size = 0
+
+# Table open cache
+table_open_cache = 4000
+table_definition_cache = 2000
+
+# ============================================================================
+# CHARACTER SET
+# ============================================================================
+
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+[mysql]
+default-character-set = utf8mb4
+
+[client]
+default-character-set = utf8mb4

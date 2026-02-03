@@ -438,9 +438,5 @@ def parse_sql_file(
 ) -> Iterator[pa.RecordBatch]:
     """Use fast regex-based parser instead of slow character-by-character parser."""
     from pipelines.sql_parser_fast import parse_sql_file_fast
-    yield from parse_sql_file_fast(file_path, table_name, batch_size, columns)
-                    batch_rows = []
 
-    if batch_rows:
-        cols = columns if columns else parser.columns
-        yield _rows_to_batch(batch_rows, cols)
+    yield from parse_sql_file_fast(file_path, table_name, batch_size, columns)
