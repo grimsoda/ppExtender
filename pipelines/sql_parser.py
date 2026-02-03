@@ -79,6 +79,7 @@ class SqlParser:
                             self.insert_buffer = ""
                     elif "VALUES" in upper_buffer:
                         self.insert_buffer = ""
+                i += 1
 
             elif self._state == ParserState.READ_VALUES:
                 if char == "(":
@@ -92,6 +93,7 @@ class SqlParser:
                     self.insert_buffer = ""
                     self.found_table = False
                     self.row_started = False
+                i += 1
 
             elif self._state == ParserState.READ_ROW:
                 if char == "'" and not self.in_string:
