@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useGetCohort, useGetBeatmapPlays, useGetRecommendations } from '../api-hooks';
+import { useGetCohort, useGetRecommendations } from '../api-hooks';
 
 interface SeedInputProps {
   onSubmitStart?: () => void;
@@ -45,21 +45,11 @@ interface SeedInputProps {
       upper: number;
     };
   }) => void;
-  onAllPlays?: (plays: Array<{
-    userId: number;
-    pp: number;
-    accuracy: number;
-    score: number;
-    mods: string;
-    rank: string;
-    maxCombo: number;
-    beatmapMaxCombo: number;
-    count300: number;
-    count100: number;
-    count50: number;
-    countMiss: number;
-    countSliderBreaks: number;
-  }>) => void;
+  onBeatmapParams?: (params: {
+    beatmapId: number;
+    mods: string[];
+    topK: number;
+  }) => void;
   onRecommendations?: (recommendations: Array<{
     beatmapId: number;
     title: string;
@@ -86,7 +76,7 @@ const MOD_EXCLUSIVE_PAIRS: Record<string, string[]> = {
   'NC': ['HT'],
 };
 
-export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onAllPlays, onRecommendations, onError }: SeedInputProps) {
+export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onBeatmapParams, onRecommendations, onError }: SeedInputProps) {
   const [beatmapId, setBeatmapId] = useState('');
   const [minPp, setMinPp] = useState(0);
   const [maxPp, setMaxPp] = useState(500);
@@ -112,14 +102,6 @@ export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onAllP
     }
   );
 
-  const beatmapPlaysQuery = useGetBeatmapPlays(
-    submittedParams?.beatmapId || 0,
-    {
-      mods: submittedParams?.mods,
-      top_k: submittedParams?.topK,
-    }
-  );
-
   const recommendationsQuery = useGetRecommendations(
     submittedParams?.beatmapId || 0,
     {
@@ -138,10 +120,14 @@ export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onAllP
   }, [cohortQuery.data, onCohortData]);
 
   useEffect(() => {
-    if (beatmapPlaysQuery.data && onAllPlays) {
-      onAllPlays(beatmapPlaysQuery.data);
+    if (submittedParams && onBeatmapParams) {
+      onBeatmapParams({
+        beatmapId: submittedParams.beatmapId,
+        mods: submittedParams.mods,
+        topK: submittedParams.topK,
+      });
     }
-  }, [beatmapPlaysQuery.data, onAllPlays]);
+  }, [submittedParams, onBeatmapParams]);
 
   useEffect(() => {
     if (recommendationsQuery.data && onRecommendations) {
@@ -155,7 +141,7 @@ export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onAllP
     }
   }, [cohortQuery.error, onError]);
 
-  const isLoading = cohortQuery.isLoading || beatmapPlaysQuery.isLoading || recommendationsQuery.isLoading;
+  const isLoading = cohortQuery.isLoading || recommendationsQuery.isLoading;
 
   useEffect(() => {
     if (onLoadingChange) {

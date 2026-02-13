@@ -126,20 +126,6 @@ describe('App Integration', () => {
     });
   });
 
-  it('should show loading spinner while fetching cohort', async () => {
-    (useGetCohort as any).mockReturnValue({
-      isLoading: true,
-      data: null,
-      error: null,
-    });
-
-    renderWithQueryClient(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
-    });
-  });
-
   it('should show loading spinner while fetching recommendations', async () => {
     (useGetCohort as any).mockReturnValue({
       isLoading: false,

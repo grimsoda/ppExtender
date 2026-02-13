@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ResponsiveScatterPlot } from '@nivo/scatterplot';
 import type { ScatterPlotNodeProps } from '@nivo/scatterplot';
+import { useGetBeatmapPlays } from '../api-hooks';
 
 interface Play {
   scoreId?: number;
@@ -56,8 +57,9 @@ interface CohortPreviewProps {
       upper: number;
     };
   } | null;
-  allPlays?: Play[];
-  isLoading?: boolean;
+  beatmapId?: number;
+  mods?: string[];
+  topK?: number;
 }
 
 const getRankColor = (rank: string): string => {
@@ -139,8 +141,19 @@ const CustomNode = (props: ScatterPlotNodeProps<any>) => {
   );
 };
 
-export function CohortPreview({ cohort, allPlays, isLoading = false }: CohortPreviewProps) {
+export function CohortPreview({ cohort, beatmapId, mods, topK }: CohortPreviewProps) {
   const [showAllPlays, setShowAllPlays] = useState(false);
+
+  const allPlaysQuery = useGetBeatmapPlays(
+    beatmapId || 0,
+    {
+      mods,
+      top_k: topK,
+    }
+  );
+
+  const allPlays = allPlaysQuery.data || [];
+  const isLoading = allPlaysQuery.isLoading;
 
   if (isLoading) {
     return (
@@ -167,7 +180,7 @@ export function CohortPreview({ cohort, allPlays, isLoading = false }: CohortPre
   // Use allPlays when showAllPlays is checked, otherwise use cohort.plays
   const playsSource = showAllPlays && allPlays ? allPlays : cohort.plays;
 
-  const playsByRank = playsSource?.reduce((acc, play) => {
+  const playsByRank = playsSource?.reduce((acc: Record<string, any[]>, play: Play) => {
     const rank = normalizeRank(play.rank || 'D');
     if (!acc[rank]) acc[rank] = [];
     acc[rank].push({

@@ -51,30 +51,23 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [cohortData, setCohortData] = useState<CohortData | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [allPlays, setAllPlays] = useState<Play[]>([]);
-  const [isLoadingCohort, setIsLoadingCohort] = useState(false);
+  const [beatmapParams, setBeatmapParams] = useState<{
+    beatmapId: number;
+    mods: string[];
+    topK: number;
+  } | null>(null);
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
 
   const handleCohortData = (data: CohortData) => {
     setCohortData(data);
   };
 
-  const handleAllPlays = (plays: Array<{
-    userId: number;
-    pp: number;
-    accuracy: number;
-    score: number;
-    mods: string;
-    rank: string;
-    maxCombo: number;
-    beatmapMaxCombo: number;
-    count300: number;
-    count100: number;
-    count50: number;
-    countMiss: number;
-    countSliderBreaks: number;
-  }>) => {
-    setAllPlays(plays);
+  const handleBeatmapParams = (params: {
+    beatmapId: number;
+    mods: string[];
+    topK: number;
+  }) => {
+    setBeatmapParams(params);
   };
 
   const handleRecommendations = (recs: Recommendation[]) => {
@@ -85,8 +78,7 @@ function App() {
     setError(errorMessage);
   };
 
-  const handleLoadingChange = (isCohortLoading: boolean, isRecommendationsLoading: boolean) => {
-    setIsLoadingCohort(isCohortLoading);
+  const handleLoadingChange = (_isCohortLoading: boolean, isRecommendationsLoading: boolean) => {
     setIsLoadingRecommendations(isRecommendationsLoading);
   };
 
@@ -147,7 +139,7 @@ function App() {
                 onSubmitStart={handleSubmitStart}
                 onLoadingChange={handleLoadingChange}
                 onCohortData={handleCohortData}
-                onAllPlays={handleAllPlays}
+                onBeatmapParams={handleBeatmapParams}
                 onRecommendations={handleRecommendations}
                 onError={handleError}
               />
@@ -178,7 +170,12 @@ function App() {
                 </div>
               )}
 
-              <CohortPreview cohort={cohortData} allPlays={allPlays} isLoading={isLoadingCohort} />
+              <CohortPreview
+                cohort={cohortData}
+                beatmapId={beatmapParams?.beatmapId}
+                mods={beatmapParams?.mods}
+                topK={beatmapParams?.topK}
+              />
 
               <RecommendationsList
                 recommendations={recommendations}
