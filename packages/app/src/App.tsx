@@ -3,7 +3,6 @@ import { SeedInput } from './components/SeedInput';
 import { CohortPreview } from './components/CohortPreview';
 import type { Play } from './components/CohortPreview';
 import { RecommendationsList } from './components/RecommendationsList';
-import { fetchCohort, fetchRecommendations, fetchAllPlays } from './api';
 import { useHealth } from './api-hooks';
 
 interface CohortData {
@@ -49,59 +48,50 @@ interface Recommendation {
 
 function App() {
   const healthQuery = useHealth();
-  const [isLoadingCohort, setIsLoadingCohort] = useState(false);
-  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cohortData, setCohortData] = useState<CohortData | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [allPlays, setAllPlays] = useState<Play[]>([]);
+  const [isLoadingCohort, setIsLoadingCohort] = useState(false);
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
 
-  const handleSubmit = async (params: {
-    beatmapId: string;
-    minPp: number;
-    maxPp: number;
-    mods: string[];
-    topK: number;
-  }) => {
-    setIsLoadingCohort(true);
-    setIsLoadingRecommendations(false);
+  const handleCohortData = (data: CohortData) => {
+    setCohortData(data);
+  };
+
+  const handleAllPlays = (plays: Array<{
+    userId: number;
+    pp: number;
+    accuracy: number;
+    score: number;
+    mods: string;
+    rank: string;
+    maxCombo: number;
+    beatmapMaxCombo: number;
+    count300: number;
+    count100: number;
+    count50: number;
+    countMiss: number;
+    countSliderBreaks: number;
+  }>) => {
+    setAllPlays(plays);
+  };
+
+  const handleRecommendations = (recs: Recommendation[]) => {
+    setRecommendations(recs);
+  };
+
+  const handleError = (errorMessage: string) => {
+    setError(errorMessage);
+  };
+
+  const handleLoadingChange = (isCohortLoading: boolean, isRecommendationsLoading: boolean) => {
+    setIsLoadingCohort(isCohortLoading);
+    setIsLoadingRecommendations(isRecommendationsLoading);
+  };
+
+  const handleSubmitStart = () => {
     setError(null);
-    setCohortData(null);
-    setRecommendations([]);
-
-    let cohort: CohortData;
-    try {
-      cohort = await fetchCohort(params);
-      setCohortData(cohort);
-
-      // Fetch all plays for this beatmap (not filtered by PP range)
-      try {
-        const plays = await fetchAllPlays({ 
-          beatmapId: params.beatmapId, 
-          mods: params.mods,
-          topK: params.topK
-        });
-        setAllPlays(plays);
-      } catch (err) {
-        console.error('Failed to fetch all plays:', err);
-        setAllPlays([]);
-      }
-    } catch (err) {
-      setError('Failed to fetch cohort');
-      setAllPlays([]);
-      setIsLoadingCohort(false);
-      return;
-    }
-    setIsLoadingCohort(false);
-
-    setIsLoadingRecommendations(true);
-    try {
-      const recs = await fetchRecommendations(params);
-      setRecommendations(recs);
-    } catch (err) {
-      console.error('Failed to fetch recommendations:', err);
-    }
-    setIsLoadingRecommendations(false);
   };
 
   const handleSelectRecommendation = (recommendation: Recommendation) => {
@@ -153,7 +143,14 @@ function App() {
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-1">
-              <SeedInput onSubmit={handleSubmit} isLoading={isLoadingCohort} />
+              <SeedInput
+                onSubmitStart={handleSubmitStart}
+                onLoadingChange={handleLoadingChange}
+                onCohortData={handleCohortData}
+                onAllPlays={handleAllPlays}
+                onRecommendations={handleRecommendations}
+                onError={handleError}
+              />
             </div>
 
             <div className="lg:col-span-2 space-y-6">

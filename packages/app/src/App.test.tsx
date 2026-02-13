@@ -18,6 +18,21 @@ vi.mock('./api-hooks', () => ({
     isSuccess: true,
     data: { status: 'ok', database: 'connected' },
   }),
+  useGetCohort: () => ({
+    isLoading: false,
+    data: null,
+    error: null,
+  }),
+  useGetBeatmapPlays: () => ({
+    isLoading: false,
+    data: null,
+    error: null,
+  }),
+  useGetRecommendations: () => ({
+    isLoading: false,
+    data: null,
+    error: null,
+  }),
 }));
 
 describe('App', () => {

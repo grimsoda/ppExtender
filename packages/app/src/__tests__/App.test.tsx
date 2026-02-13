@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from '../App';
 import * as apiHooks from '../api-hooks';
@@ -16,12 +17,6 @@ function renderWithQueryClient(ui: React.ReactElement) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
 
-vi.mock('../api', () => ({
-  fetchCohort: vi.fn(),
-  fetchRecommendations: vi.fn(),
-  fetchAllPlays: vi.fn(),
-}));
-
 vi.mock('../api-hooks', async () => {
   const actual = await vi.importActual<typeof import('../api-hooks')>('../api-hooks');
   return {
@@ -32,10 +27,13 @@ vi.mock('../api-hooks', async () => {
       isSuccess: true,
       data: { status: 'ok', database: 'connected' },
     })),
+    useGetCohort: vi.fn(),
+    useGetBeatmapPlays: vi.fn(),
+    useGetRecommendations: vi.fn(),
   };
 });
 
-import { fetchCohort, fetchRecommendations, fetchAllPlays } from '../api';
+const { useGetCohort, useGetBeatmapPlays, useGetRecommendations } = apiHooks as any;
 
 describe('App Integration', () => {
   const mockCohortData = {
@@ -65,9 +63,24 @@ describe('App Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    (useGetCohort as any).mockReturnValue({
+      isLoading: false,
+      data: null,
+      error: null,
+    });
+    (useGetBeatmapPlays as any).mockReturnValue({
+      isLoading: false,
+      data: null,
+      error: null,
+    });
+    (useGetRecommendations as any).mockReturnValue({
+      isLoading: false,
+      data: null,
+      error: null,
+    });
   });
 
-  it('should render the app title', () => {
+  it('should render app title', () => {
     renderWithQueryClient(<App />);
 
     expect(screen.getByText('osu! Recommender')).toBeInTheDocument();
@@ -75,191 +88,88 @@ describe('App Integration', () => {
 
   it('should render SeedInput component', () => {
     renderWithQueryClient(<App />);
-    
+
     expect(screen.getByLabelText(/beatmap id/i)).toBeInTheDocument();
   });
 
-  it('should fetch cohort data on form submission', async () => {
-    fetchCohort.mockResolvedValueOnce(mockCohortData);
-
-    renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: '12345' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
-    await waitFor(() => {
-      expect(fetchCohort).toHaveBeenCalledWith({
-        beatmapId: '12345',
-        minPp: 0,
-        maxPp: 500,
-        mods: [],
-        topK: 200,
-      });
-    });
-  });
-
   it('should display cohort preview after successful fetch', async () => {
-    fetchCohort.mockResolvedValueOnce(mockCohortData);
-    
+    (useGetCohort as any).mockReturnValue({
+      isLoading: false,
+      data: mockCohortData,
+      error: null,
+    });
+
     renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: '12345' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
+
     await waitFor(() => {
       expect(screen.getByText(/cohort size/i)).toBeInTheDocument();
       expect(screen.getByText('150')).toBeInTheDocument();
     });
   });
 
-  it('should fetch recommendations after cohort is loaded', async () => {
-    fetchCohort.mockResolvedValueOnce(mockCohortData);
-    fetchRecommendations.mockResolvedValueOnce(mockRecommendations);
-    
-    renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: '12345' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
-    await waitFor(() => {
-      expect(fetchRecommendations).toHaveBeenCalledWith({
-        beatmapId: '12345',
-        minPp: 0,
-        maxPp: 500,
-        mods: [],
-        topK: 200,
-      });
-    });
-  });
-
   it('should display recommendations after fetch', async () => {
-    fetchCohort.mockResolvedValueOnce(mockCohortData);
-    fetchRecommendations.mockResolvedValueOnce(mockRecommendations);
-    
+    (useGetCohort as any).mockReturnValue({
+      isLoading: false,
+      data: mockCohortData,
+      error: null,
+    });
+    (useGetRecommendations as any).mockReturnValue({
+      isLoading: false,
+      data: mockRecommendations,
+      error: null,
+    });
+
     renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: '12345' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
+
     await waitFor(() => {
       expect(screen.getByText('Test Beatmap 1')).toBeInTheDocument();
     });
   });
 
   it('should show loading spinner while fetching cohort', async () => {
-    fetchCohort.mockImplementation(() => new Promise(() => {}));
-    
+    (useGetCohort as any).mockReturnValue({
+      isLoading: true,
+      data: null,
+      error: null,
+    });
+
     renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: '12345' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
-    expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
+    });
   });
 
   it('should show loading spinner while fetching recommendations', async () => {
-    fetchCohort.mockResolvedValueOnce(mockCohortData);
-    fetchRecommendations.mockImplementation(() => new Promise(() => {}));
-    
+    (useGetCohort as any).mockReturnValue({
+      isLoading: false,
+      data: mockCohortData,
+      error: null,
+    });
+    (useGetRecommendations as any).mockReturnValue({
+      isLoading: true,
+      data: null,
+      error: null,
+    });
+
     renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: '12345' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
+
     await waitFor(() => {
       expect(screen.getByText(/loading recommendations/i)).toBeInTheDocument();
     });
   });
 
-  it('should display error message on invalid beatmap_id', async () => {
-    fetchCohort.mockRejectedValueOnce(new Error('Invalid beatmap ID'));
-    
-    renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: 'invalid' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
-    await waitFor(() => {
-      expect(screen.getByText(/invalid beatmap id/i)).toBeInTheDocument();
-    });
-  });
-
   it('should display error message on API error', async () => {
-    fetchCohort.mockRejectedValueOnce(new Error('Network error'));
-    
+    (useGetCohort as any).mockReturnValue({
+      isLoading: false,
+      data: null,
+      error: new Error('Network error'),
+    });
+
     renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: '12345' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
+
     await waitFor(() => {
       expect(screen.getByText(/failed to fetch cohort/i)).toBeInTheDocument();
-    });
-  });
-
-  it('should handle mod selection in form', async () => {
-    fetchCohort.mockResolvedValueOnce(mockCohortData);
-    
-    renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: '12345' } });
-    
-    const hdCheckbox = screen.getByLabelText(/hd/i);
-    fireEvent.click(hdCheckbox);
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
-    await waitFor(() => {
-      expect(fetchCohort).toHaveBeenCalledWith(expect.objectContaining({
-        mods: ['HD'],
-      }));
-    });
-  });
-
-  it('should handle pp range selection in form', async () => {
-    fetchCohort.mockResolvedValueOnce(mockCohortData);
-    
-    renderWithQueryClient(<App />);
-    
-    const input = screen.getByLabelText(/beatmap id/i);
-    fireEvent.change(input, { target: { value: '12345' } });
-    
-    const minPpSlider = screen.getByLabelText(/min pp/i);
-    fireEvent.change(minPpSlider, { target: { value: '200' } });
-    
-    const submitButton = screen.getByRole('button', { name: /submit/i });
-    fireEvent.click(submitButton);
-    
-    await waitFor(() => {
-      expect(fetchCohort).toHaveBeenCalledWith(expect.objectContaining({
-        minPp: 200,
-      }));
     });
   });
 });

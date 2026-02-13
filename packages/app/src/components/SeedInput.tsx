@@ -1,14 +1,79 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useGetCohort, useGetBeatmapPlays, useGetRecommendations } from '../api-hooks';
 
 interface SeedInputProps {
-  onSubmit: (params: {
-    beatmapId: string;
-    minPp: number;
-    maxPp: number;
-    mods: string[];
-    topK: number;
+  onSubmitStart?: () => void;
+  onLoadingChange?: (isCohortLoading: boolean, isRecommendationsLoading: boolean) => void;
+  onCohortData?: (data: {
+    size: number;
+    ppDistribution: {
+      min: number;
+      max: number;
+      mean: number;
+      median: number;
+    };
+    accuracyDistribution: {
+      min: number;
+      max: number;
+      mean: number;
+      median: number;
+    };
+    topPlayers: Array<{
+      userId: number;
+      username: string;
+      pp: number;
+      accuracy: number;
+    }>;
+    plays: Array<{
+      scoreId: number;
+      userId: number;
+      pp: number;
+      accuracy: number;
+      score: number;
+      mods: string;
+      rank: string;
+      maxCombo: number;
+      beatmapMaxCombo: number;
+      count300: number;
+      count100: number;
+      count50: number;
+      countMiss: number;
+      countSliderBreaks: number;
+    }>;
+    seedPpRange: {
+      lower: number;
+      upper: number;
+    };
   }) => void;
-  isLoading?: boolean;
+  onAllPlays?: (plays: Array<{
+    userId: number;
+    pp: number;
+    accuracy: number;
+    score: number;
+    mods: string;
+    rank: string;
+    maxCombo: number;
+    beatmapMaxCombo: number;
+    count300: number;
+    count100: number;
+    count50: number;
+    countMiss: number;
+    countSliderBreaks: number;
+  }>) => void;
+  onRecommendations?: (recommendations: Array<{
+    beatmapId: number;
+    title: string;
+    artist: string;
+    difficulty: string;
+    stars: number;
+    pp: number;
+    accuracy: number;
+    mods: string[];
+    coverUrl: string;
+    bpm?: number;
+    totalLength?: number;
+  }>) => void;
+  onError?: (error: string) => void;
 }
 
 const AVAILABLE_MODS = ['HD', 'HR', 'DT', 'FL', 'EZ', 'HT', 'NC'];
@@ -21,13 +86,82 @@ const MOD_EXCLUSIVE_PAIRS: Record<string, string[]> = {
   'NC': ['HT'],
 };
 
-export function SeedInput({ onSubmit, isLoading = false }: SeedInputProps) {
+export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onAllPlays, onRecommendations, onError }: SeedInputProps) {
   const [beatmapId, setBeatmapId] = useState('');
   const [minPp, setMinPp] = useState(0);
   const [maxPp, setMaxPp] = useState(500);
   const [topK, setTopK] = useState(200);
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [submittedParams, setSubmittedParams] = useState<{
+    beatmapId: number;
+    minPp: number;
+    maxPp: number;
+    mods: string[];
+    topK: number;
+  } | null>(null);
+
+  // React Query hooks for data fetching
+  const cohortQuery = useGetCohort(
+    submittedParams?.beatmapId || 0,
+    {
+      pp_lower: submittedParams?.minPp,
+      pp_upper: submittedParams?.maxPp,
+      mods: submittedParams?.mods,
+      top_k: submittedParams?.topK,
+    }
+  );
+
+  const beatmapPlaysQuery = useGetBeatmapPlays(
+    submittedParams?.beatmapId || 0,
+    {
+      mods: submittedParams?.mods,
+      top_k: submittedParams?.topK,
+    }
+  );
+
+  const recommendationsQuery = useGetRecommendations(
+    submittedParams?.beatmapId || 0,
+    {
+      pp_lower: submittedParams?.minPp,
+      pp_upper: submittedParams?.maxPp,
+      mods: submittedParams?.mods,
+      top_k: submittedParams?.topK,
+      limit: 20,
+    }
+  );
+
+  useEffect(() => {
+    if (cohortQuery.data && onCohortData) {
+      onCohortData(cohortQuery.data);
+    }
+  }, [cohortQuery.data, onCohortData]);
+
+  useEffect(() => {
+    if (beatmapPlaysQuery.data && onAllPlays) {
+      onAllPlays(beatmapPlaysQuery.data);
+    }
+  }, [beatmapPlaysQuery.data, onAllPlays]);
+
+  useEffect(() => {
+    if (recommendationsQuery.data && onRecommendations) {
+      onRecommendations(recommendationsQuery.data);
+    }
+  }, [recommendationsQuery.data, onRecommendations]);
+
+  useEffect(() => {
+    if (cohortQuery.error && onError) {
+      onError('Failed to fetch cohort');
+    }
+  }, [cohortQuery.error, onError]);
+
+  const isLoading = cohortQuery.isLoading || beatmapPlaysQuery.isLoading || recommendationsQuery.isLoading;
+
+  useEffect(() => {
+    if (onLoadingChange) {
+      onLoadingChange(cohortQuery.isLoading, recommendationsQuery.isLoading);
+    }
+  }, [cohortQuery.isLoading, recommendationsQuery.isLoading, onLoadingChange]);
 
   const handleModToggle = (mod: string) => {
     setSelectedMods(prev => {
@@ -63,8 +197,10 @@ export function SeedInput({ onSubmit, isLoading = false }: SeedInputProps) {
       return;
     }
 
-    onSubmit({
-      beatmapId,
+    onSubmitStart?.();
+
+    setSubmittedParams({
+      beatmapId: parseInt(beatmapId, 10),
       minPp,
       maxPp,
       mods: selectedMods,
