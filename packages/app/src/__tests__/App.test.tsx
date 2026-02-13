@@ -1,13 +1,41 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from '../App';
+import * as apiHooks from '../api-hooks';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false,
+    },
+  },
+});
+
+function renderWithQueryClient(ui: React.ReactElement) {
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
 
 vi.mock('../api', () => ({
   fetchCohort: vi.fn(),
   fetchRecommendations: vi.fn(),
+  fetchAllPlays: vi.fn(),
 }));
 
-import { fetchCohort, fetchRecommendations } from '../api';
+vi.mock('../api-hooks', async () => {
+  const actual = await vi.importActual<typeof import('../api-hooks')>('../api-hooks');
+  return {
+    ...actual,
+    useHealth: vi.fn(() => ({
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      data: { status: 'ok', database: 'connected' },
+    })),
+  };
+});
+
+import { fetchCohort, fetchRecommendations, fetchAllPlays } from '../api';
 
 describe('App Integration', () => {
   const mockCohortData = {
@@ -17,6 +45,8 @@ describe('App Integration', () => {
     topPlayers: [
       { userId: 1, username: 'Player1', pp: 450, accuracy: 99.5 },
     ],
+    plays: [],
+    seedPpRange: { lower: 200, upper: 500 },
   };
 
   const mockRecommendations = [
@@ -38,21 +68,21 @@ describe('App Integration', () => {
   });
 
   it('should render the app title', () => {
-    render(<App />);
-    
+    renderWithQueryClient(<App />);
+
     expect(screen.getByText('osu! Recommender')).toBeInTheDocument();
   });
 
   it('should render SeedInput component', () => {
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     expect(screen.getByLabelText(/beatmap id/i)).toBeInTheDocument();
   });
 
   it('should fetch cohort data on form submission', async () => {
     fetchCohort.mockResolvedValueOnce(mockCohortData);
-    
-    render(<App />);
+
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });
@@ -66,6 +96,7 @@ describe('App Integration', () => {
         minPp: 0,
         maxPp: 500,
         mods: [],
+        topK: 200,
       });
     });
   });
@@ -73,7 +104,7 @@ describe('App Integration', () => {
   it('should display cohort preview after successful fetch', async () => {
     fetchCohort.mockResolvedValueOnce(mockCohortData);
     
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });
@@ -91,7 +122,7 @@ describe('App Integration', () => {
     fetchCohort.mockResolvedValueOnce(mockCohortData);
     fetchRecommendations.mockResolvedValueOnce(mockRecommendations);
     
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });
@@ -105,6 +136,7 @@ describe('App Integration', () => {
         minPp: 0,
         maxPp: 500,
         mods: [],
+        topK: 200,
       });
     });
   });
@@ -113,7 +145,7 @@ describe('App Integration', () => {
     fetchCohort.mockResolvedValueOnce(mockCohortData);
     fetchRecommendations.mockResolvedValueOnce(mockRecommendations);
     
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });
@@ -129,7 +161,7 @@ describe('App Integration', () => {
   it('should show loading spinner while fetching cohort', async () => {
     fetchCohort.mockImplementation(() => new Promise(() => {}));
     
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });
@@ -144,7 +176,7 @@ describe('App Integration', () => {
     fetchCohort.mockResolvedValueOnce(mockCohortData);
     fetchRecommendations.mockImplementation(() => new Promise(() => {}));
     
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });
@@ -160,7 +192,7 @@ describe('App Integration', () => {
   it('should display error message on invalid beatmap_id', async () => {
     fetchCohort.mockRejectedValueOnce(new Error('Invalid beatmap ID'));
     
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: 'invalid' } });
@@ -176,7 +208,7 @@ describe('App Integration', () => {
   it('should display error message on API error', async () => {
     fetchCohort.mockRejectedValueOnce(new Error('Network error'));
     
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });
@@ -192,7 +224,7 @@ describe('App Integration', () => {
   it('should handle mod selection in form', async () => {
     fetchCohort.mockResolvedValueOnce(mockCohortData);
     
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });
@@ -213,7 +245,7 @@ describe('App Integration', () => {
   it('should handle pp range selection in form', async () => {
     fetchCohort.mockResolvedValueOnce(mockCohortData);
     
-    render(<App />);
+    renderWithQueryClient(<App />);
     
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });

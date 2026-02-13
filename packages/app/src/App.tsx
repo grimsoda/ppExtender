@@ -4,6 +4,7 @@ import { CohortPreview } from './components/CohortPreview';
 import type { Play } from './components/CohortPreview';
 import { RecommendationsList } from './components/RecommendationsList';
 import { fetchCohort, fetchRecommendations, fetchAllPlays } from './api';
+import { useHealth } from './api-hooks';
 
 interface CohortData {
   size: number;
@@ -47,6 +48,7 @@ interface Recommendation {
 }
 
 function App() {
+  const healthQuery = useHealth();
   const [isLoadingCohort, setIsLoadingCohort] = useState(false);
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,47 +117,81 @@ function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
-            <SeedInput onSubmit={handleSubmit} isLoading={isLoadingCohort} />
-          </div>
+      {healthQuery.isLoading && (
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+        </div>
+      )}
 
-          <div className="lg:col-span-2 space-y-6">
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <div className="flex items-start">
-                  <svg
-                    className="h-5 w-5 text-red-400 mt-0.5 mr-3"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  <div>
-                    <h3 className="text-sm font-medium text-red-800">Error</h3>
-                    <p className="text-sm text-red-700 mt-1">{error}</p>
-                  </div>
-                </div>
+      {healthQuery.isError && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <svg
+                className="h-5 w-5 text-red-400 mt-0.5 mr-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <div>
+                <h3 className="text-sm font-medium text-red-800">Connection Error</h3>
+                <p className="text-sm text-red-700 mt-1">Failed to connect to the API server. Please ensure the backend is running.</p>
               </div>
-            )}
-
-            <CohortPreview cohort={cohortData} allPlays={allPlays} isLoading={isLoadingCohort} />
-
-            <RecommendationsList 
-              recommendations={recommendations} 
-              onSelect={handleSelectRecommendation}
-              isLoading={isLoadingRecommendations}
-            />
+            </div>
           </div>
         </div>
-      </main>
+      )}
+
+      {healthQuery.isSuccess && (
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1">
+              <SeedInput onSubmit={handleSubmit} isLoading={isLoadingCohort} />
+            </div>
+
+            <div className="lg:col-span-2 space-y-6">
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <svg
+                      className="h-5 w-5 text-red-400 mt-0.5 mr-3"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <div>
+                      <h3 className="text-sm font-medium text-red-800">Error</h3>
+                      <p className="text-sm text-red-700 mt-1">{error}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <CohortPreview cohort={cohortData} allPlays={allPlays} isLoading={isLoadingCohort} />
+
+              <RecommendationsList
+                recommendations={recommendations}
+                onSelect={handleSelectRecommendation}
+                isLoading={isLoadingRecommendations}
+              />
+            </div>
+          </div>
+        </main>
+      )}
     </div>
   );
 }

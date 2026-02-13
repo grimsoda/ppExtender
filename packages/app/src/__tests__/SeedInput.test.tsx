@@ -88,6 +88,7 @@ describe('SeedInput', () => {
         minPp: 200,
         maxPp: 500,
         mods: ['HD'],
+        topK: 200,
       });
     });
   });
