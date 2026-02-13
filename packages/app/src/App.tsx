@@ -50,13 +50,11 @@ function App() {
   const healthQuery = useHealth();
   const [error, setError] = useState<string | null>(null);
   const [cohortData, setCohortData] = useState<CohortData | null>(null);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [beatmapParams, setBeatmapParams] = useState<{
     beatmapId: number;
     mods: string[];
     topK: number;
   } | null>(null);
-  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
 
   const handleCohortData = (data: CohortData) => {
     setCohortData(data);
@@ -70,16 +68,8 @@ function App() {
     setBeatmapParams(params);
   };
 
-  const handleRecommendations = (recs: Recommendation[]) => {
-    setRecommendations(recs);
-  };
-
   const handleError = (errorMessage: string) => {
     setError(errorMessage);
-  };
-
-  const handleLoadingChange = (_isCohortLoading: boolean, isRecommendationsLoading: boolean) => {
-    setIsLoadingRecommendations(isRecommendationsLoading);
   };
 
   const handleSubmitStart = () => {
@@ -137,10 +127,8 @@ function App() {
             <div className="lg:col-span-1">
               <SeedInput
                 onSubmitStart={handleSubmitStart}
-                onLoadingChange={handleLoadingChange}
                 onCohortData={handleCohortData}
                 onBeatmapParams={handleBeatmapParams}
-                onRecommendations={handleRecommendations}
                 onError={handleError}
               />
             </div>
@@ -178,9 +166,12 @@ function App() {
               />
 
               <RecommendationsList
-                recommendations={recommendations}
+                beatmapId={beatmapParams?.beatmapId || 0}
+                pp_lower={0}
+                pp_upper={10000}
+                mods={beatmapParams?.mods || []}
+                top_k={beatmapParams?.topK || 200}
                 onSelect={handleSelectRecommendation}
-                isLoading={isLoadingRecommendations}
               />
             </div>
           </div>

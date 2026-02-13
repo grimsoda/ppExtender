@@ -1,4 +1,5 @@
 import { BeatmapCard } from './BeatmapCard';
+import { useGetRecommendations } from '../api-hooks';
 
 interface Recommendation {
   beatmapId: number;
@@ -10,19 +11,38 @@ interface Recommendation {
   accuracy: number;
   mods: string[];
   coverUrl: string;
+  bpm?: number;
+  totalLength?: number;
 }
 
 interface RecommendationsListProps {
-  recommendations: Recommendation[];
+  beatmapId: number;
+  pp_lower?: number;
+  pp_upper?: number;
+  mods?: string[];
+  top_k?: number;
   onSelect: (recommendation: Recommendation) => void;
-  isLoading?: boolean;
 }
 
-export function RecommendationsList({ 
-  recommendations = [], 
+export function RecommendationsList({
+  beatmapId,
+  pp_lower = 0,
+  pp_upper = 10000,
+  mods = [],
+  top_k = 200,
   onSelect,
-  isLoading = false 
 }: RecommendationsListProps) {
+  const { data: recommendations = [], isLoading, error } = useGetRecommendations(
+    beatmapId,
+    {
+      pp_lower,
+      pp_upper,
+      mods,
+      top_k,
+      limit: 20,
+    }
+  );
+
   if (isLoading) {
     return (
       <div className="bg-white p-6 rounded-lg shadow-md">
@@ -33,6 +53,14 @@ export function RecommendationsList({
           </svg>
         </div>
         <p className="text-center text-gray-600">Loading recommendations...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <p className="text-center text-red-600">Failed to load recommendations</p>
       </div>
     );
   }

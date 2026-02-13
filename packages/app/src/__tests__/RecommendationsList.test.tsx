@@ -1,6 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import RecommendationsList from '../components/RecommendationsList';
+import { useGetRecommendations } from '../api-hooks';
+
+// Mock the useGetRecommendations hook
+vi.mock('../api-hooks', () => ({
+  useGetRecommendations: vi.fn(),
+}));
 
 describe('RecommendationsList', () => {
   const mockRecommendations = [
@@ -40,53 +47,94 @@ describe('RecommendationsList', () => {
   ];
 
   const mockOnSelect = vi.fn();
+  let queryClient: QueryClient;
 
   beforeEach(() => {
     mockOnSelect.mockClear();
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    vi.clearAllMocks();
   });
 
+  function renderWithProviders(ui: React.ReactElement) {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        {ui}
+      </QueryClientProvider>
+    );
+  }
+
   it('should render list of recommended beatmaps', () => {
-    render(
-      <RecommendationsList 
-        recommendations={mockRecommendations} 
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: mockRecommendations,
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
-    
+
     expect(screen.getByText(/recommendations/i)).toBeInTheDocument();
     expect(screen.getAllByTestId('beatmap-card')).toHaveLength(3);
   });
 
   it('should render beatmap titles', () => {
-    render(
-      <RecommendationsList 
-        recommendations={mockRecommendations} 
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: mockRecommendations,
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
-    
+
     expect(screen.getByText('Test Beatmap 1')).toBeInTheDocument();
     expect(screen.getByText('Test Beatmap 2')).toBeInTheDocument();
     expect(screen.getByText('Test Beatmap 3')).toBeInTheDocument();
   });
 
   it('should render beatmap artists', () => {
-    render(
-      <RecommendationsList 
-        recommendations={mockRecommendations} 
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: mockRecommendations,
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
-    
+
     expect(screen.getByText('Test Artist 1')).toBeInTheDocument();
     expect(screen.getByText('Test Artist 2')).toBeInTheDocument();
     expect(screen.getByText('Test Artist 3')).toBeInTheDocument();
   });
 
   it('should render difficulty and star ratings', () => {
-    render(
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: mockRecommendations,
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
       <RecommendationsList
-        recommendations={mockRecommendations}
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
@@ -100,13 +148,19 @@ describe('RecommendationsList', () => {
   });
 
   it('should render pp and accuracy stats', () => {
-    render(
-      <RecommendationsList 
-        recommendations={mockRecommendations} 
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: mockRecommendations,
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
-    
+
     expect(screen.getByText(/320.*pp/i)).toBeInTheDocument();
     expect(screen.getByText(/96\.5.*%/i)).toBeInTheDocument();
     expect(screen.getByText(/380.*pp/i)).toBeInTheDocument();
@@ -114,77 +168,129 @@ describe('RecommendationsList', () => {
   });
 
   it('should render mod tags', () => {
-    render(
-      <RecommendationsList 
-        recommendations={mockRecommendations} 
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: mockRecommendations,
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
-    
+
     expect(screen.getByText('HD')).toBeInTheDocument();
     expect(screen.getByText('DT')).toBeInTheDocument();
     expect(screen.getByText('HR')).toBeInTheDocument();
   });
 
   it('should handle beatmap selection', () => {
-    render(
-      <RecommendationsList 
-        recommendations={mockRecommendations} 
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: mockRecommendations,
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
-    
+
     const firstCard = screen.getAllByTestId('beatmap-card')[0];
     fireEvent.click(firstCard);
-    
+
     expect(mockOnSelect).toHaveBeenCalledWith(mockRecommendations[0]);
   });
 
   it('should render beatmap cover images', () => {
-    render(
-      <RecommendationsList 
-        recommendations={mockRecommendations} 
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: mockRecommendations,
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
-    
+
     const images = screen.getAllByRole('img');
     expect(images).toHaveLength(3);
     expect(images[0]).toHaveAttribute('src', 'https://example.com/cover1.jpg');
   });
 
   it('should show empty state when no recommendations', () => {
-    render(
-      <RecommendationsList 
-        recommendations={[]} 
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
-    
+
     expect(screen.getByText(/no recommendations found/i)).toBeInTheDocument();
   });
 
   it('should show loading state', () => {
-    render(
-      <RecommendationsList 
-        recommendations={[]}
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
-        isLoading={true}
       />
     );
-    
+
     expect(screen.getByText(/loading recommendations/i)).toBeInTheDocument();
     expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
   });
 
-  it('should display recommendation count', () => {
-    render(
-      <RecommendationsList 
-        recommendations={mockRecommendations} 
+  it('should show error state', () => {
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error('Failed to fetch'),
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
         onSelect={mockOnSelect}
       />
     );
-    
+
+    expect(screen.getByText(/failed to load recommendations/i)).toBeInTheDocument();
+  });
+
+  it('should display recommendation count', () => {
+    vi.mocked(useGetRecommendations).mockReturnValue({
+      data: mockRecommendations,
+      isLoading: false,
+      error: null,
+    } as any);
+
+    renderWithProviders(
+      <RecommendationsList
+        beatmapId={12345}
+        onSelect={mockOnSelect}
+      />
+    );
+
     expect(screen.getByText(/3.*recommendations?/i)).toBeInTheDocument();
   });
 });
