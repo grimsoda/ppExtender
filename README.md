@@ -16,8 +16,36 @@ This system provides personalized beatmap recommendations based on collaborative
 - **Streaming SQL Parser**: Memory-efficient parsing of large SQL dump files
 - **Bronze-Silver-Gold Architecture**: Medallion data architecture with DuckDB
 - **Sub-second Query Performance**: Precomputed tables and optimized indexes
-- **Restful API**: Express.js backend with TypeScript
-- **Modern Frontend**: React + Vite + Tailwind CSS
+- **Type-Safe APIs**: tRPC provides end-to-end type safety across full stack
+- **Modern Frontend**: React + Vite + Tailwind CSS v4
+
+## Tech Stack
+
+**ETL (Data Pipelines):**
+- Python 3.10+
+- Pydantic v2 (schema validation)
+- PyArrow (columnar data)
+- DuckDB (warehouse database)
+
+**Backend (API Server):**
+- Bun 1.3+ (JavaScript runtime) - NEW
+- tRPC v11 (type-safe APIs) - NEW
+- DuckDB Node Neo (database client)
+- Vitest (testing framework)
+
+**Frontend (React Application):**
+- React 19.2.0
+- TypeScript 5.3+
+- Vite 7.2.4+ (build tool)
+- Tailwind CSS v4.1.18+ (styling)
+- Nivo 0.99.0 (data visualization)
+- TanStack Query v5 (server state management) - NEW
+- Vitest (testing framework)
+
+**Build Tools:**
+- Turborepo 2.0+ (monorepo orchestrator)
+- Bun (package manager and runtime) - NEW
+- TypeScript 5.3+ (type checking)
 
 ## Architecture
 
