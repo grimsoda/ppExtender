@@ -2,6 +2,8 @@ import express, { Express } from 'express';
 import cors from 'cors';
 import * as path from 'path';
 import { Database, getGlobalDatabase } from './db';
+import { createExpressMiddleware } from '@trpc/server/adapters/express';
+import { appRouter } from './root-router';
 
 (BigInt.prototype as any).toJSON = function() {
   return Number(this);
@@ -592,6 +594,13 @@ app.get('/api/user/:id', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Mount tRPC alongside Express routes at /api/trpc
+// This allows parallel operation during migration
+app.use('/api/trpc', createExpressMiddleware({
+  router: appRouter,
+  createContext: () => ({}),
+}));
 
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err instanceof SyntaxError && 'body' in err) {
