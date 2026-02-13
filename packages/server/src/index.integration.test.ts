@@ -17,9 +17,6 @@ import * as fs from 'fs';
 const DB_PATH = path.resolve('data/warehouse/2026-02/osu.duckdb');
 
 describe('Integration Tests with Real Data', () => {
-  // Increase timeout for database operations
-  jest.setTimeout(30000);
-
   beforeAll(async () => {
     // Verify database exists
     if (!fs.existsSync(DB_PATH)) {
