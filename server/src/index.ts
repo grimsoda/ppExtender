@@ -3,13 +3,17 @@ import cors from 'cors';
 import * as path from 'path';
 import * as fs from 'fs';
 
+(BigInt.prototype as any).toJSON = function() {
+  return Number(this);
+};
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-const DB_PATH = process.env.DUCKDB_PATH || 'data/warehouse/2026-02/osu.duckdb';
+const DB_PATH = process.env.DUCKDB_PATH || path.resolve(__dirname, '../../data/warehouse/2026-02/osu.duckdb');
 let dbInstance: any = null;
 
 async function getDb() {
@@ -54,7 +58,7 @@ app.get('/health', async (req, res) => {
 
 app.post('/api/cohort', async (req, res) => {
   try {
-    const { beatmap_id, pp_lower = 0, pp_upper = 10000, mods } = req.body;
+    const { beatmap_id, pp_lower = 0, pp_upper = 10000, mods, top_k = 200 } = req.body;
 
     if (!beatmap_id) {
       return res.status(400).json({ error: 'Missing required field: beatmap_id' });
@@ -64,29 +68,60 @@ app.post('/api/cohort', async (req, res) => {
       return res.status(400).json({ error: 'Invalid beatmap_id' });
     }
 
+    const k = Math.min(Math.max(Number(top_k) || 200, 50), 500);
+
     const connection = await getConnection();
 
     try {
       let query = `
-        SELECT 
+        SELECT
+          id,
           user_id,
+          beatmap_id,
           pp,
-          mods,
+          mods_key as mods,
           accuracy,
-          score
-        FROM user_beatmap_playcount
+          score,
+          rank,
+          max_combo,
+          json_extract(data, '$.statistics.great') as count300,
+          json_extract(data, '$.statistics.ok') as count100,
+          json_extract(data, '$.statistics.meh') as count50,
+          json_extract(data, '$.statistics.miss') as countmiss,
+          json_extract(data, '$.statistics.large_tick_miss') as count_slider_breaks
+        FROM mart_user_topk
         WHERE beatmap_id = ?
           AND pp BETWEEN ? AND ?
       `;
 
       const params: (number | string)[] = [beatmap_id, pp_lower, pp_upper];
-
-      if (mods !== undefined && mods !== null && Array.isArray(mods) && mods.length > 0) {
-        query += ' AND mods = ?';
-        params.push(mods.join(','));
+      const modsArray = mods !== undefined && mods !== null ? mods : [];
+      const availableMods = ['HD', 'HR', 'DT', 'FL', 'EZ', 'HT', 'NC'];
+      
+      if (modsArray.length > 0) {
+        const filteredMods = modsArray.filter((m: string) => m !== 'CL').sort();
+        if (filteredMods.length === 1) {
+          const mod = filteredMods[0];
+          query += ` AND (mods_key = ? OR mods_key LIKE ? OR mods_key LIKE ?)`;
+          params.push(
+            JSON.stringify([{ acronym: mod }]),
+            `%${JSON.stringify([{ acronym: mod }])}%`,
+            `%${JSON.stringify([{ acronym: mod }, { acronym: "CL" }])}%`
+          );
+        } else {
+          const modsJson = JSON.stringify(filteredMods.map((m: string) => ({ acronym: m })));
+          const modsWithCl = JSON.stringify([...filteredMods.map((m: string) => ({ acronym: m })), { acronym: "CL" }]);
+          query += ` AND (mods_key = ? OR mods_key LIKE ?)`;
+          params.push(modsJson, `%${modsWithCl}%`);
+        }
+      } else {
+        for (const mod of availableMods) {
+          query += ` AND mods_key NOT LIKE ?`;
+          params.push(`%acronym":"${mod}"%`);
+        }
       }
 
-      query += ' ORDER BY pp DESC';
+      query += ` ORDER BY pp DESC LIMIT ${k}`;
 
       const result = await connection.run(query, params);
       const rows = await result.getRowObjects();
@@ -95,22 +130,81 @@ app.post('/api/cohort', async (req, res) => {
         return res.status(404).json({ error: 'Beatmap not found' });
       }
 
+      const beatmapResult = await connection.run(
+        `SELECT max_combo FROM raw_osu_beatmaps WHERE beatmap_id = ?`,
+        [beatmap_id]
+      );
+      const beatmapRows = await beatmapResult.getRowObjects();
+      const beatmapMaxCombo = beatmapRows.length > 0 ? Number(beatmapRows[0].max_combo) || 0 : 0;
+
       const ppValues = rows.map((row: any) => row.pp as number).sort((a: number, b: number) => a - b);
+      const accuracyValues = rows.map((row: any) => {
+        const acc = typeof row.accuracy === 'object' && row.accuracy !== null
+          ? Number(row.accuracy.value) / Math.pow(10, row.accuracy.scale || 0)
+          : Number(row.accuracy) || 0.95;
+        return acc * 100; // Convert from [0,1] to [0,100]
+      }).sort((a: number, b: number) => a - b);
+      
       const minPp = ppValues[0] || 0;
       const maxPp = ppValues[ppValues.length - 1] || 0;
-      const meanPp = ppValues.length > 0 
-        ? ppValues.reduce((a: number, b: number) => a + b, 0) / ppValues.length 
+      const meanPp = ppValues.length > 0
+        ? ppValues.reduce((a: number, b: number) => a + b, 0) / ppValues.length
         : 0;
       const medianPp = calculateMedian(ppValues);
 
+      const minAcc = accuracyValues[0] || 0;
+      const maxAcc = accuracyValues[accuracyValues.length - 1] || 0;
+      const meanAcc = accuracyValues.length > 0
+        ? accuracyValues.reduce((a: number, b: number) => a + b, 0) / accuracyValues.length
+        : 0;
+      const medianAcc = calculateMedian(accuracyValues);
+
+      const topPlayers = rows.slice(0, 10).map((row: any) => ({
+        userId: Number(row.user_id),
+        username: String(row.user_id),
+        pp: Number(row.pp),
+        accuracy: Math.round((Number(row.accuracy) || 0.95) * 100 * 100) / 100
+      }));
+
+      const allPlays = rows.map((row: any) => ({
+        scoreId: Number(row.id),
+        userId: Number(row.user_id),
+        pp: Number(row.pp),
+        accuracy: Math.round((Number(row.accuracy) || 0.95) * 100 * 100) / 100,
+        score: Number(row.score) || 0,
+        mods: row.mods || '[]',
+        rank: row.rank || 'D',
+        maxCombo: Number(row.max_combo) || 0,
+        beatmapMaxCombo,
+        count300: Number(row.count300) || 0,
+        count100: Number(row.count100) || 0,
+        count50: Number(row.count50) || 0,
+        countMiss: Number(row.countmiss) || 0,
+        countSliderBreaks: Number(row.count_slider_breaks) || 0
+      }));
+
+      const uniqueUserIds = new Set(rows.map((row: any) => row.user_id)).size;
+
       res.json({
         beatmap_id,
-        cohort_size: rows.length,
+        cohort_size: uniqueUserIds,
         pp_distribution: {
           min: Math.round(minPp * 100) / 100,
           max: Math.round(maxPp * 100) / 100,
           mean: Math.round(meanPp * 100) / 100,
           median: Math.round(medianPp * 100) / 100
+        },
+        accuracy_distribution: {
+          min: Math.round(minAcc * 100) / 100,
+          max: Math.round(maxAcc * 100) / 100,
+          mean: Math.round(meanAcc * 100) / 100,
+          median: Math.round(medianAcc * 100) / 100
+        },
+        top_players: topPlayers,
+        plays: allPlays,
+        seed_pp_range: {
+          lower: pp_lower,
+          upper: pp_upper
         }
       });
     } finally {
@@ -118,6 +212,117 @@ app.post('/api/cohort', async (req, res) => {
     }
   } catch (error) {
     console.error('Error in /api/cohort:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/beatmap-plays', async (req, res) => {
+  try {
+    const { beatmap_id, mods, top_k = 200 } = req.body;
+
+    if (!beatmap_id) {
+      return res.status(400).json({ error: 'Missing required field: beatmap_id' });
+    }
+
+    if (typeof beatmap_id !== 'number') {
+      return res.status(400).json({ error: 'Invalid beatmap_id' });
+    }
+
+    const k = Math.min(Math.max(Number(top_k) || 200, 50), 500);
+
+    const connection = await getConnection();
+
+    try {
+      let query = `
+        SELECT
+          id,
+          user_id,
+          beatmap_id,
+          pp,
+          mods_key as mods,
+          accuracy,
+          score,
+          rank,
+          max_combo,
+          json_extract(data, '$.statistics.great') as count300,
+          json_extract(data, '$.statistics.ok') as count100,
+          json_extract(data, '$.statistics.meh') as count50,
+          json_extract(data, '$.statistics.miss') as countmiss,
+          json_extract(data, '$.statistics.large_tick_miss') as count_slider_breaks
+        FROM mart_user_topk
+        WHERE beatmap_id = ?
+      `;
+
+      const params: (number | string)[] = [beatmap_id];
+      const modsArray = mods !== undefined && mods !== null ? mods : [];
+      const availableMods = ['HD', 'HR', 'DT', 'FL', 'EZ', 'HT', 'NC'];
+      
+      if (modsArray.length > 0) {
+        const filteredMods = modsArray.filter((m: string) => m !== 'CL').sort();
+        if (filteredMods.length === 1) {
+          const mod = filteredMods[0];
+          query += ` AND (mods_key = ? OR mods_key LIKE ? OR mods_key LIKE ?)`;
+          params.push(
+            JSON.stringify([{ acronym: mod }]),
+            `%${JSON.stringify([{ acronym: mod }])}%`,
+            `%${JSON.stringify([{ acronym: mod }, { acronym: "CL" }])}%`
+          );
+        } else {
+          const modsJson = JSON.stringify(filteredMods.map((m: string) => ({ acronym: m })));
+          const modsWithCl = JSON.stringify([...filteredMods.map((m: string) => ({ acronym: m })), { acronym: "CL" }]);
+          query += ` AND (mods_key = ? OR mods_key LIKE ?)`;
+          params.push(modsJson, `%${modsWithCl}%`);
+        }
+      } else {
+        for (const mod of availableMods) {
+          query += ` AND mods_key NOT LIKE ?`;
+          params.push(`%acronym":"${mod}"%`);
+        }
+      }
+
+      query += ` ORDER BY pp DESC LIMIT ${k}`;
+
+      const result = await connection.run(query, params);
+      const rows = await result.getRowObjects();
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'Beatmap not found' });
+      }
+
+      const beatmapResult = await connection.run(
+        `SELECT max_combo FROM raw_osu_beatmaps WHERE beatmap_id = ?`,
+        [beatmap_id]
+      );
+      const beatmapRows = await beatmapResult.getRowObjects();
+      const beatmapMaxCombo = beatmapRows.length > 0 ? Number(beatmapRows[0].max_combo) || 0 : 0;
+
+      const allPlays = rows.map((row: any) => ({
+        scoreId: Number(row.id),
+        userId: Number(row.user_id),
+        pp: Number(row.pp),
+        accuracy: Math.round((Number(row.accuracy) || 0.95) * 100 * 100) / 100,
+        score: Number(row.score) || 0,
+        mods: row.mods || '[]',
+        rank: row.rank || 'D',
+        maxCombo: Number(row.max_combo) || 0,
+        beatmapMaxCombo,
+        count300: Number(row.count300) || 0,
+        count100: Number(row.count100) || 0,
+        count50: Number(row.count50) || 0,
+        countMiss: Number(row.countmiss) || 0,
+        countSliderBreaks: Number(row.count_slider_breaks) || 0
+      }));
+
+      res.json({
+        beatmap_id,
+        total_plays: rows.length,
+        all_plays: allPlays
+      });
+    } finally {
+      await connection.closeSync();
+    }
+  } catch (error) {
+    console.error('Error in /api/beatmap-plays:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -155,10 +360,30 @@ app.post('/api/recommend', async (req, res) => {
       `;
 
       const cohortParams: (number | string)[] = [beatmap_id, pp_lower, pp_upper];
-
-      if (mods !== undefined && mods !== null && Array.isArray(mods) && mods.length > 0) {
-        cohortQuery += ' AND mods = ?';
-        cohortParams.push(mods.join(','));
+      const modsArray = mods !== undefined && mods !== null ? mods : [];
+      const availableMods = ['HD', 'HR', 'DT', 'FL', 'EZ', 'HT', 'NC'];
+      
+      if (modsArray.length > 0) {
+        const filteredMods = modsArray.filter((m: string) => m !== 'CL').sort();
+        if (filteredMods.length === 1) {
+          const mod = filteredMods[0];
+          cohortQuery += ` AND (mods = ? OR mods LIKE ? OR mods LIKE ?)`;
+          cohortParams.push(
+            JSON.stringify([{ acronym: mod }]),
+            `%${JSON.stringify([{ acronym: mod }])}%`,
+            `%${JSON.stringify([{ acronym: mod }, { acronym: "CL" }])}%`
+          );
+        } else {
+          const modsJson = JSON.stringify(filteredMods.map((m: string) => ({ acronym: m })));
+          const modsWithCl = JSON.stringify([...filteredMods.map((m: string) => ({ acronym: m })), { acronym: "CL" }]);
+          cohortQuery += ` AND (mods = ? OR mods LIKE ?)`;
+          cohortParams.push(modsJson, `%${modsWithCl}%`);
+        }
+      } else {
+        for (const mod of availableMods) {
+          cohortQuery += ` AND mods NOT LIKE ?`;
+          cohortParams.push(`%acronym":"${mod}"%`);
+        }
       }
 
       const cohortResult = await connection.run(cohortQuery, cohortParams);
@@ -176,8 +401,9 @@ app.post('/api/recommend', async (req, res) => {
 
       const placeholders = userIds.map(() => '?').join(',');
       let recommendQuery = `
-        SELECT 
+        SELECT
           ub.beatmap_id,
+          b.beatmapset_id,
           b.title,
           b.artist,
           b.version,
@@ -193,7 +419,7 @@ app.post('/api/recommend', async (req, res) => {
         WHERE ub.user_id IN (${placeholders})
           AND ub.beatmap_id != ?
           AND ub.pp BETWEEN ? AND ?
-        GROUP BY ub.beatmap_id, b.title, b.artist, b.version, b.creator, 
+        GROUP BY ub.beatmap_id, b.beatmapset_id, b.title, b.artist, b.version, b.creator,
                  b.difficulty_rating, b.bpm, b.total_length
         ORDER BY play_count DESC, avg_pp DESC
         LIMIT ?
@@ -215,6 +441,7 @@ app.post('/api/recommend', async (req, res) => {
         total: recommendRows.length,
         recommendations: recommendRows.map((row: any) => ({
           beatmap_id: row.beatmap_id,
+          beatmapset_id: row.beatmapset_id,
           title: row.title,
           artist: row.artist,
           version: row.version,
@@ -367,14 +594,14 @@ app.get('/api/user/:id', async (req, res) => {
         : 0;
 
       res.json({
-        user_id: user.user_id,
+        user_id: Number(user.user_id),
         stats: {
           total_plays: totalPlays,
           average_pp: Math.round(avgPp * 100) / 100,
           peak_rank: null
         },
         top_plays: playsRows.map((row: any) => ({
-          beatmap_id: row.beatmap_id,
+          beatmap_id: Number(row.beatmap_id),
           title: row.title,
           artist: row.artist,
           version: row.version,

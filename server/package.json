@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
-    "test": "jest",
+    "test": "jest --runInBand",
     "start": "node dist/index.js"
   },
   "dependencies": {
