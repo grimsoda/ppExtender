@@ -4,13 +4,14 @@
   "description": "Backend API for osu! beatmap recommender",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "dev": "bun run --watch src/index.ts",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
-    "start": "node dist/index.js"
+    "start": "bun dist/index.js",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.4.4-r.1",
