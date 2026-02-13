@@ -1,42 +1,22 @@
-import express from 'express';
+import express, { Express } from 'express';
 import cors from 'cors';
 import * as path from 'path';
-import * as fs from 'fs';
+import { Database, getGlobalDatabase } from './db';
 
 (BigInt.prototype as any).toJSON = function() {
   return Number(this);
 };
 
-const app = express();
+const app: Express = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
 const DB_PATH = process.env.DUCKDB_PATH || path.resolve(__dirname, '../../../data/warehouse/2026-02/osu.duckdb');
-let dbInstance: any = null;
 
-async function getDb() {
-  if (!dbInstance) {
-    const absolutePath = path.resolve(DB_PATH);
-    if (!fs.existsSync(absolutePath)) {
-      throw new Error(`Database not found at ${absolutePath}`);
-    }
-    let duckdb;
-    if (typeof jest !== 'undefined' && (jest as any).requireActual) {
-      duckdb = (jest as any).requireActual('@duckdb/node-api');
-    } else {
-      duckdb = await import('@duckdb/node-api');
-    }
-    dbInstance = await duckdb.DuckDBInstance.create(absolutePath);
-  }
-  return dbInstance;
-}
-
-async function getConnection() {
-  const instance = await getDb();
-  return await instance.connect();
-}
+// Initialize global database instance
+const db = getGlobalDatabase(DB_PATH);
 
 function calculateMedian(sortedValues: number[]): number {
   if (sortedValues.length === 0) return 0;
@@ -49,7 +29,7 @@ function calculateMedian(sortedValues: number[]): number {
 
 app.get('/health', async (req, res) => {
   try {
-    await getDb();
+    await db.connect();
     res.json({ status: 'ok', database: 'connected' });
   } catch (error) {
     res.json({ status: 'ok', database: 'disconnected' });
@@ -70,7 +50,7 @@ app.post('/api/cohort', async (req, res) => {
 
     const k = Math.min(Math.max(Number(top_k) || 200, 50), 500);
 
-    const connection = await getConnection();
+    const connection = await db.getConnection();
 
     try {
       let query = `
@@ -123,18 +103,16 @@ app.post('/api/cohort', async (req, res) => {
 
       query += ` ORDER BY pp DESC LIMIT ${k}`;
 
-      const result = await connection.run(query, params);
-      const rows = await result.getRowObjects();
+      const rows = await connection.query(query, params);
 
       if (rows.length === 0) {
         return res.status(404).json({ error: 'Beatmap not found' });
       }
 
-      const beatmapResult = await connection.run(
+      const beatmapRows = await connection.query(
         `SELECT max_combo FROM raw_osu_beatmaps WHERE beatmap_id = ?`,
         [beatmap_id]
       );
-      const beatmapRows = await beatmapResult.getRowObjects();
       const beatmapMaxCombo = beatmapRows.length > 0 ? Number(beatmapRows[0].max_combo) || 0 : 0;
 
       const ppValues = rows.map((row: any) => row.pp as number).sort((a: number, b: number) => a - b);
@@ -208,7 +186,7 @@ app.post('/api/cohort', async (req, res) => {
         }
       });
     } finally {
-      await connection.closeSync();
+      connection.close();
     }
   } catch (error) {
     console.error('Error in /api/cohort:', error);
@@ -230,7 +208,7 @@ app.post('/api/beatmap-plays', async (req, res) => {
 
     const k = Math.min(Math.max(Number(top_k) || 200, 50), 500);
 
-    const connection = await getConnection();
+    const connection = await db.getConnection();
 
     try {
       let query = `
@@ -282,18 +260,16 @@ app.post('/api/beatmap-plays', async (req, res) => {
 
       query += ` ORDER BY pp DESC LIMIT ${k}`;
 
-      const result = await connection.run(query, params);
-      const rows = await result.getRowObjects();
+      const rows = await connection.query(query, params);
 
       if (rows.length === 0) {
         return res.status(404).json({ error: 'Beatmap not found' });
       }
 
-      const beatmapResult = await connection.run(
+      const beatmapRows = await connection.query(
         `SELECT max_combo FROM raw_osu_beatmaps WHERE beatmap_id = ?`,
         [beatmap_id]
       );
-      const beatmapRows = await beatmapResult.getRowObjects();
       const beatmapMaxCombo = beatmapRows.length > 0 ? Number(beatmapRows[0].max_combo) || 0 : 0;
 
       const allPlays = rows.map((row: any) => ({
@@ -319,7 +295,7 @@ app.post('/api/beatmap-plays', async (req, res) => {
         all_plays: allPlays
       });
     } finally {
-      await connection.closeSync();
+      connection.close();
     }
   } catch (error) {
     console.error('Error in /api/beatmap-plays:', error);
@@ -339,14 +315,13 @@ app.post('/api/recommend', async (req, res) => {
       return res.status(400).json({ error: 'Invalid beatmap_id' });
     }
 
-    const connection = await getConnection();
+    const connection = await db.getConnection();
 
     try {
-      const beatmapCheckResult = await connection.run(
+      const beatmapCheckRows = await connection.query(
         'SELECT beatmap_id FROM beatmaps WHERE beatmap_id = ?',
         [beatmap_id]
       );
-      const beatmapCheckRows = await beatmapCheckResult.getRowObjects();
 
       if (beatmapCheckRows.length === 0) {
         return res.status(404).json({ error: 'Beatmap not found' });
@@ -386,8 +361,7 @@ app.post('/api/recommend', async (req, res) => {
         }
       }
 
-      const cohortResult = await connection.run(cohortQuery, cohortParams);
-      const cohortRows = await cohortResult.getRowObjects();
+      const cohortRows = await connection.query(cohortQuery, cohortParams);
 
       if (cohortRows.length === 0) {
         return res.json({
@@ -433,8 +407,7 @@ app.post('/api/recommend', async (req, res) => {
         limit
       ];
 
-      const recommendResult = await connection.run(recommendQuery, recommendParams);
-      const recommendRows = await recommendResult.getRowObjects();
+      const recommendRows = await connection.query(recommendQuery, recommendParams);
 
       res.json({
         beatmap_id,
@@ -456,7 +429,7 @@ app.post('/api/recommend', async (req, res) => {
         }))
       });
     } finally {
-      await connection.closeSync();
+      connection.close();
     }
   } catch (error) {
     console.error('Error in /api/recommend:', error);
@@ -484,7 +457,7 @@ app.post('/api/beatmaps', async (req, res) => {
       return res.status(400).json({ error: 'Invalid beatmap_id in array' });
     }
 
-    const connection = await getConnection();
+    const connection = await db.getConnection();
 
     try {
       const placeholders = beatmap_ids.map(() => '?').join(',');
@@ -504,8 +477,7 @@ app.post('/api/beatmaps', async (req, res) => {
         WHERE beatmap_id IN (${placeholders})
       `;
 
-      const result = await connection.run(query, beatmap_ids);
-      const rows = await result.getRowObjects();
+      const rows = await connection.query(query, beatmap_ids);
 
       const beatmapMap = new Map();
       rows.forEach((row: any) => {
@@ -527,7 +499,7 @@ app.post('/api/beatmaps', async (req, res) => {
 
       res.json({ beatmaps: results });
     } finally {
-      await connection.closeSync();
+      connection.close();
     }
   } catch (error) {
     console.error('Error in /api/beatmaps:', error);
@@ -543,23 +515,23 @@ app.get('/api/user/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
 
-    const connection = await getConnection();
+    const connection = await db.getConnection();
 
     try {
-      const userQuery = `
-        SELECT 
-          user_id,
-          username,
-          pp_raw,
-          accuracy,
-          playcount,
-          level
-        FROM users
-        WHERE user_id = ?
-      `;
-
-      const userResult = await connection.run(userQuery, [userId]);
-      const userRows = await userResult.getRowObjects();
+      const userRows = await connection.query(
+        `
+          SELECT 
+            user_id,
+            username,
+            pp_raw,
+            accuracy,
+            playcount,
+            level
+          FROM users
+          WHERE user_id = ?
+        `,
+        [userId]
+      );
 
       if (userRows.length === 0) {
         return res.status(404).json({ error: 'User not found' });
@@ -567,26 +539,26 @@ app.get('/api/user/:id', async (req, res) => {
 
       const user = userRows[0];
 
-      const playsQuery = `
-        SELECT 
-          ub.beatmap_id,
-          b.title,
-          b.artist,
-          b.version,
-          ub.pp,
-          ub.mods,
-          ub.accuracy,
-          ub.score,
-          ub.playcount
-        FROM user_beatmap_playcount ub
-        JOIN beatmaps b ON ub.beatmap_id = b.beatmap_id
-        WHERE ub.user_id = ?
-        ORDER BY ub.pp DESC
-        LIMIT 50
-      `;
-
-      const playsResult = await connection.run(playsQuery, [userId]);
-      const playsRows = await playsResult.getRowObjects();
+      const playsRows = await connection.query(
+        `
+          SELECT 
+            ub.beatmap_id,
+            b.title,
+            b.artist,
+            b.version,
+            ub.pp,
+            ub.mods,
+            ub.accuracy,
+            ub.score,
+            ub.playcount
+          FROM user_beatmap_playcount ub
+          JOIN beatmaps b ON ub.beatmap_id = b.beatmap_id
+          WHERE ub.user_id = ?
+          ORDER BY ub.pp DESC
+          LIMIT 50
+        `,
+        [userId]
+      );
 
       const totalPlays = playsRows.length;
       const avgPp = totalPlays > 0 
@@ -613,7 +585,7 @@ app.get('/api/user/:id', async (req, res) => {
         }))
       });
     } finally {
-      await connection.closeSync();
+      connection.close();
     }
   } catch (error) {
     console.error('Error in /api/user/:id:', error);
@@ -640,3 +612,4 @@ if (require.main === module) {
 }
 
 export default app;
+export { Database, db };
