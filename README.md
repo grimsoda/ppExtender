@@ -13,11 +13,38 @@ This system provides personalized beatmap recommendations based on collaborative
 
 ### Key Features
 
-- **Streaming SQL Parser**: Memory-efficient parsing of large SQL dump files
-- **Bronze-Silver-Gold Architecture**: Medallion data architecture with DuckDB
-- **Sub-second Query Performance**: Precomputed tables and optimized indexes
-- **Type-Safe APIs**: tRPC provides end-to-end type safety across full stack
-- **Modern Frontend**: React + Vite + Tailwind CSS v4
+#### Data Layer
+- **Streaming SQL Parser**: Memory-efficient parsing of 62M+ row SQL dumps
+- **Bronze-Silver-Gold Architecture**: Medallion data pipeline with Parquet staging and DuckDB warehouse
+- **Batch Processing**: Memory-safe window functions for large datasets (>62M rows)
+- **Precomputed Tables**: mart_best_scores, mart_user_topk, mart_beatmap_user_sets for sub-second queries
+- **Mod Encoding Utilities**: Bitset ↔ comma-separated bidirectional conversion
+- **Score ID Resolution**: Canonical ID lookup for legacy score mapping
+
+#### Backend (v2 Architecture)
+- **Type-Safe APIs**: End-to-end type safety with tRPC v11
+- **Server State Management**: TanStack Query v5 for data fetching, caching, and refetching
+- **Automatic Refetching**: Data refreshes on window focus and reconnection
+- **Optimistic Updates**: Fast UI feedback before server confirmation
+- **Intelligent Caching**: Automatic cache invalidation and background refetching
+- **Bun Runtime**: 1.3+ for improved performance over Node.js
+- **Vitest**: Modern testing framework with 80% coverage thresholds
+
+#### Frontend
+- **Modern React Stack**: React 19.2.0 with TypeScript 5.3+
+- **TanStack Query Integration**: Type-safe data fetching with hooks (useQuery, useMutation)
+- **Loading States**: Automatic loading indicators from React Query
+- **Error Handling**: Centralized error boundaries with React Query
+- **Nivo Data Viz**: Scatter plots for cohort visualization
+- **Tailwind CSS v4**: Utility-first CSS framework for rapid styling
+- **Vite 7.2**: Lightning-fast build tool with HMR
+
+#### Developer Experience
+- **Turborepo**: Monorepo orchestration with task pipeline and caching
+- **Hot Module Replacement**: Instant updates during development
+- **Type Safety**: Full TypeScript coverage across full stack
+- **80% Coverage**: Enforced thresholds for core packages
+- **Performance Benchmarks**: Sub-second query performance (cohort <20ms, recommendations <10ms)
 
 ## Tech Stack
 
