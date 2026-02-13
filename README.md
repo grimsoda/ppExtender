@@ -64,12 +64,12 @@ flowchart TB
         Queries["recommender_queries.py<br/>Query Logic"]
     end
 
-    subgraph Backend["Backend (Node/TS)"]
-        API["Express API<br/>server/src/index.ts"]
-        DB[("DuckDB<br/>@duckdb/node-api")]
+    subgraph Backend["Backend (Node/TS + tRPC)"]
+        API["tRPC API<br/>server/src/trpc.ts"]
+        DB["DuckDB<br/>@duckdb/node-neo"]
     end
 
-    subgraph Frontend["Frontend (React)"]
+    subgraph Frontend["Frontend (React + TanStack Query)"]
         UI["React App<br/>app/src/"]
         Components["Components<br/>SeedInput, RecommendationsList"]
     end
