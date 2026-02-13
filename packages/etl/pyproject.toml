@@ -31,6 +31,6 @@ source = ["src"]
 omit = ["*/tests/*", "*/test_*"]
 
 [tool.coverage.report]
-fail_under = 60
+fail_under = 80
 skip_covered = false
 show_missing = true
