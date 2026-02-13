@@ -5,7 +5,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import duckdb
 
-from pipelines.recommender_queries import (
+from recommender_queries import (
     RecommenderQueries,
     get_cohort_users,
     get_recommendations,

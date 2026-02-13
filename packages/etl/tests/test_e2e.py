@@ -16,10 +16,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import requests
 
-from pipelines.sql_parser import parse_sql_file, SqlParser
-from pipelines.parquet_writer import write_parquet_batches, ParquetWriter
-from pipelines.duckdb_pipeline import DuckDBPipeline, create_pipeline
-from pipelines.recommender_queries import (
+from sql_parser import parse_sql_file, SqlParser
+from parquet_writer import write_parquet_batches, ParquetWriter
+from duckdb_pipeline import DuckDBPipeline, create_pipeline
+from recommender_queries import (
     RecommenderQueries,
     get_cohort_users,
     get_recommendations,

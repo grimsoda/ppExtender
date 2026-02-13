@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-const DB_PATH = process.env.DUCKDB_PATH || path.resolve(__dirname, '../../data/warehouse/2026-02/osu.duckdb');
+const DB_PATH = process.env.DUCKDB_PATH || path.resolve(__dirname, '../../../data/warehouse/2026-02/osu.duckdb');
 let dbInstance: any = null;
 
 async function getDb() {

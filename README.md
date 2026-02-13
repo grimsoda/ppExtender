@@ -16,7 +16,7 @@ This system provides personalized beatmap recommendations based on collaborative
 - **Streaming SQL Parser**: Memory-efficient parsing of large SQL dump files
 - **Bronze-Silver-Gold Architecture**: Medallion data architecture with DuckDB
 - **Sub-second Query Performance**: Precomputed tables and optimized indexes
-- **RESTful API**: Express.js backend with TypeScript
+- **Restful API**: Express.js backend with TypeScript
 - **Modern Frontend**: React + Vite + Tailwind CSS
 
 ## Architecture
@@ -25,7 +25,7 @@ This system provides personalized beatmap recommendations based on collaborative
 flowchart TB
     subgraph Data["Data Layer"]
         SQL["SQL Dumps<br/>data/ingest/"]
-        Parquet["Bronze Parquet<br/>data/ingest/"]
+        Parquet["Bronze Parquet<br/>data/parquet/"]
         DuckDB["Warehouse<br/>data/warehouse/"]
     end
 
@@ -61,13 +61,19 @@ flowchart TB
 /run/media/work/OS/ppExtender/
 ├── data/
 │   ├── ingest/2026-02/sql/          # SQL dump files
-│   ├── ingest/2026-02/bronze_parquet/  # Parquet bronze layer
+│   ├── parquet/                     # Parquet files (exported from MySQL)
 │   └── warehouse/2026-02/           # DuckDB database
 ├── pipelines/                       # Python ETL
 │   ├── sql_parser.py               # Streaming SQL parser
 │   ├── parquet_writer.py           # Parquet file writer
 │   ├── duckdb_pipeline.py          # DuckDB pipeline
+│   ├── run_pipeline.py             # Full pipeline orchestrator
 │   └── recommender_queries.py      # Query logic
+├── scripts/                         # Utility scripts
+│   ├── import_with_monitoring.sh   # MySQL import with optimizations
+│   ├── export_to_parquet.sh        # MySQL to Parquet export
+│   ├── final_import_all_tables.sh  # Complete import pipeline
+│   └── recover_mariadb.sh          # MariaDB recovery utility
 ├── server/                          # Node/TS Backend
 │   └── src/
 │       └── index.ts                # Express API
@@ -87,12 +93,13 @@ flowchart TB
     └── test_recommender_queries.py
 ```
 
-## Setup Instructions
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.10+
 - Node.js 18+
+- MariaDB/MySQL (for initial data import)
 - npm or yarn
 
 ### Python Environment Setup
@@ -146,50 +153,104 @@ npm run build
 npm test
 ```
 
-## Running the Pipeline
+## Data Pipeline Workflow
 
-### 1. Parse SQL to Parquet (Bronze Layer)
+### Phase 1: Import SQL to MySQL (One-time setup)
 
-```bash
-# From project root, with venv activated
-python -c "
-from pipelines.sql_parser import parse_sql_file
-from pipelines.parquet_writer import write_parquet_batches
-
-batches = parse_sql_file('data/ingest/2026-02/sql/scores.sql', 'scores')
-manifest = write_parquet_batches(
-    batches,
-    'data/ingest/2026-02/bronze_parquet/scores',
-    'scores'
-)
-print(f'Wrote {manifest[\"total_rows\"]} rows')
-"
-```
-
-### 2. Load to DuckDB (Silver/Gold Layers)
+Import osu! SQL dumps into MariaDB with optimizations:
 
 ```bash
-python -c "
-from pipelines.duckdb_pipeline import create_pipeline
+# Import a single table with monitoring
+./scripts/import_with_monitoring.sh --table scores --force
 
-manifest = create_pipeline(
-    parquet_dir='data/ingest/2026-02/bronze_parquet',
-    warehouse_dir='data/warehouse/2026-02'
-)
-print(manifest)
-"
+# Or import all tables (requires sudo for MariaDB config)
+sudo ./scripts/final_import_all_tables.sh
 ```
 
-### 3. Run Full Pipeline
+**Key Features:**
+- Session optimizations applied (unique_checks=0, foreign_key_checks=0, autocommit=0)
+- Real-time progress monitoring with INSERT statement tracking
+- Estimated time remaining with margin of error
+- Global optimizations: innodb_flush_log_at_trx_commit=0, innodb_doublewrite=0
+
+**Performance:**
+- Small tables (<100MB): <1 minute
+- Medium tables (1-5GB): 1-3 hours
+- Large tables (20GB+ scores): 6-12 hours
+
+### Phase 2: Export MySQL to Parquet
+
+Export all MySQL tables to optimized Parquet format:
 
 ```bash
-# The pipeline creates these tables:
-# - raw_scores: Loaded from Parquet
-# - stg_scores: Filtered to playmode=0 (osu!standard)
-# - mart_best_scores: Deduplicated best scores per user/beatmap/mods
-# - mart_user_topk: Top 100 scores per user
-# - mart_beatmap_user_sets: Precomputed beatmap statistics with ARRAY_AGG
+# Export all tables (requires sudo)
+sudo ./scripts/export_to_parquet.sh --all
+
+# Or export specific tables
+sudo ./scripts/export_to_parquet.sh --table scores --table osu_beatmaps
+
+# List available tables
+sudo ./scripts/export_to_parquet.sh --list
 ```
+
+**Export Optimizations:**
+- `PER_THREAD_OUTPUT`: Parallel writing via DuckDB's 16 threads
+- ZSTD compression (level 3): 4-12x compression ratio
+- Row group size: 1M rows / 16MB
+- Performance settings: preserve_insertion_order=false, filter_pushdown=true
+
+**Output Structure:**
+```
+data/parquet/
+├── scores/
+│   └── data.parquet/
+│       └── data_0.parquet (2.8GB, 62M rows)
+├── osu_scores_high/
+│   └── data.parquet/
+│       └── data_0.parquet (1.3GB, 58M rows)
+└── ... (other tables)
+```
+
+**Performance:**
+- Export speed: 3.9-4.5 MB/s
+- Total time for 39GB SQL: ~3 hours
+- Final Parquet size: ~4.8GB (8x compression)
+
+### Phase 3: Run ETL Pipeline (Silver + Gold)
+
+Load Parquet files into DuckDB and create analytics tables:
+
+```bash
+# Skip bronze (already done via export script), run silver + gold only
+python pipelines/run_pipeline.py --phase silver   # Parquet → DuckDB raw tables
+python pipelines/run_pipeline.py --phase gold     # Raw → Staging → Mart tables
+
+# Or run both phases together
+python pipelines/run_pipeline.py --phase silver && python pipelines/run_pipeline.py --phase gold
+
+# Dry run to see what would be executed
+python pipelines/run_pipeline.py --phase silver --dry-run
+```
+
+**Pipeline Stages:**
+
+1. **Bronze**: SQL → Parquet (done via `export_to_parquet.sh`, skip in Python pipeline)
+2. **Silver**: Load Parquet → DuckDB raw tables
+   - `raw_scores`: All scores data
+   - `raw_osu_beatmaps`: Beatmap metadata
+   - `raw_osu_beatmapsets`: Beatmap set metadata
+   - etc.
+
+3. **Gold**: Create analytics-ready tables
+   - `stg_scores`: Filtered to playmode=0 (osu!standard)
+   - `mart_best_scores`: Deduplicated best scores per user/beatmap/mods
+   - `mart_user_topk`: Top 100 scores per user
+   - `mart_beatmap_user_sets`: Precomputed beatmap statistics
+
+**Performance:**
+- Silver phase: ~5-10 minutes
+- Gold phase: ~2-5 minutes
+- Total pipeline: ~10-15 minutes
 
 ## API Documentation
 
@@ -390,7 +451,13 @@ npm test
 ```bash
 cd app
 npm test
+# or
+bun run test
+# or shorthand
+bun t
 ```
+
+**Note on `bun test`**: The command `bun test` runs Bun's native test runner which doesn't support Vitest's jsdom environment. Always use `bun run test`, `bun t`, or `npm test` instead.
 
 ## Environment Variables
 
@@ -410,6 +477,16 @@ The system implements several optimizations for sub-second query performance:
 3. **Temp Table Caching**: Cohort users cached in temp tables to avoid large IN clauses
 4. **Streaming Parser**: Memory-efficient SQL parsing for large datasets
 5. **Parquet Sharding**: Files split by row count for efficient processing
+6. **Columnar Compression**: ZSTD compression with optimized row group sizes
+7. **Parallel Export**: PER_THREAD_OUTPUT for maximum DuckDB throughput
+
+## Data Statistics
+
+Final dataset after full pipeline:
+- **Total Rows**: 361,607,855
+- **Scores**: 62,262,950 rows
+- **Parquet Size**: ~4.8GB (compressed from ~39GB SQL)
+- **Compression Ratio**: 8x
 
 ## License
 
