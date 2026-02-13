@@ -1,6 +1,6 @@
 const API_BASE_URL = 'http://localhost:3000';
 
-interface CohortParams {
+export interface CohortParams {
   beatmapId: string;
   minPp: number;
   maxPp: number;
@@ -8,7 +8,7 @@ interface CohortParams {
   topK: number;
 }
 
-interface CohortData {
+export interface CohortData {
   size: number;
   ppDistribution: {
     min: number;
@@ -49,7 +49,7 @@ interface CohortData {
   };
 }
 
-interface Recommendation {
+export interface Recommendation {
   beatmapId: number;
   beatmapsetId: number;
   title: string;
