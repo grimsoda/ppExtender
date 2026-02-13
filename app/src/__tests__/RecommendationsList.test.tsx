@@ -85,15 +85,18 @@ describe('RecommendationsList', () => {
 
   it('should render difficulty and star ratings', () => {
     render(
-      <RecommendationsList 
-        recommendations={mockRecommendations} 
+      <RecommendationsList
+        recommendations={mockRecommendations}
         onSelect={mockOnSelect}
       />
     );
-    
-    expect(screen.getByText(/hard.*4\.5/i)).toBeInTheDocument();
-    expect(screen.getByText(/insane.*5\.2/i)).toBeInTheDocument();
-    expect(screen.getByText(/expert.*6\.1/i)).toBeInTheDocument();
+
+    expect(screen.getByText('Hard')).toBeInTheDocument();
+    expect(screen.getByText('Insane')).toBeInTheDocument();
+    expect(screen.getByText('Expert')).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes('4.5'))).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes('5.2'))).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes('6.1'))).toBeInTheDocument();
   });
 
   it('should render pp and accuracy stats', () => {

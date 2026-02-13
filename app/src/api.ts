@@ -5,6 +5,7 @@ interface CohortParams {
   minPp: number;
   maxPp: number;
   mods: string[];
+  topK: number;
 }
 
 interface CohortData {
@@ -27,10 +28,30 @@ interface CohortData {
     pp: number;
     accuracy: number;
   }>;
+  plays: Array<{
+    userId: number;
+    pp: number;
+    accuracy: number;
+    score: number;
+    mods: string;
+    rank: string;
+    maxCombo: number;
+    beatmapMaxCombo: number;
+    count300: number;
+    count100: number;
+    count50: number;
+    countMiss: number;
+    countSliderBreaks: number;
+  }>;
+  seedPpRange: {
+    lower: number;
+    upper: number;
+  };
 }
 
 interface Recommendation {
   beatmapId: number;
+  beatmapsetId: number;
   title: string;
   artist: string;
   difficulty: string;
@@ -39,6 +60,8 @@ interface Recommendation {
   accuracy: number;
   mods: string[];
   coverUrl: string;
+  bpm?: number;
+  totalLength?: number;
 }
 
 export async function fetchCohort(params: CohortParams): Promise<CohortData> {
@@ -52,6 +75,7 @@ export async function fetchCohort(params: CohortParams): Promise<CohortData> {
       pp_lower: params.minPp > 0 ? params.minPp : undefined,
       pp_upper: params.maxPp < 1000 ? params.maxPp : undefined,
       mods: params.mods.length > 0 ? params.mods : undefined,
+      top_k: params.topK || 200,
     }),
   });
 
@@ -72,7 +96,45 @@ export async function fetchCohort(params: CohortParams): Promise<CohortData> {
       median: 50,
     },
     topPlayers: data.top_players || [],
+    plays: data.plays || [],
+    seedPpRange: data.seed_pp_range || { lower: 0, upper: 2000 },
   };
+}
+
+export async function fetchAllPlays(params: { beatmapId: string; mods: string[]; topK?: number }): Promise<Array<{
+  userId: number;
+  pp: number;
+  accuracy: number;
+  score: number;
+  mods: string;
+  rank: string;
+  maxCombo: number;
+  beatmapMaxCombo: number;
+  count300: number;
+  count100: number;
+  count50: number;
+  countMiss: number;
+  countSliderBreaks: number;
+}>> {
+  const response = await fetch(`${API_BASE_URL}/api/beatmap-plays`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      beatmap_id: parseInt(params.beatmapId, 10),
+      mods: params.mods.length > 0 ? params.mods : undefined,
+      top_k: params.topK || 200,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch all plays' }));
+    throw new Error(error.error || `HTTP error! status: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.all_plays || [];
 }
 
 export async function fetchRecommendations(params: CohortParams): Promise<Recommendation[]> {
@@ -86,6 +148,7 @@ export async function fetchRecommendations(params: CohortParams): Promise<Recomm
       pp_lower: params.minPp > 0 ? params.minPp : undefined,
       pp_upper: params.maxPp < 1000 ? params.maxPp : undefined,
       mods: params.mods.length > 0 ? params.mods : undefined,
+      top_k: params.topK || 200,
     }),
   });
 
@@ -98,23 +161,28 @@ export async function fetchRecommendations(params: CohortParams): Promise<Recomm
   
   return (data.recommendations || []).map((rec: {
     beatmap_id: number;
+    beatmapset_id: number;
     title: string;
     artist: string;
-    difficulty: string;
-    stars: number;
+    version: string;
+    difficulty_rating: number;
     avg_pp: number;
-    accuracy?: number;
+    avg_accuracy?: number;
+    bpm?: number;
+    total_length?: number;
     mods?: string[];
-    cover_url?: string;
   }) => ({
     beatmapId: rec.beatmap_id,
+    beatmapsetId: rec.beatmapset_id,
     title: rec.title,
     artist: rec.artist,
-    difficulty: rec.difficulty,
-    stars: rec.stars,
+    difficulty: rec.version,
+    stars: rec.difficulty_rating,
     pp: rec.avg_pp,
-    accuracy: rec.accuracy || 95,
+    accuracy: rec.avg_accuracy || 95,
     mods: rec.mods || [],
-    coverUrl: rec.cover_url || `https://assets.ppy.sh/beatmaps/${rec.beatmap_id}/covers/cover.jpg`,
+    coverUrl: `https://assets.ppy.sh/beatmaps/${rec.beatmapset_id}/covers/list.jpg`,
+    bpm: rec.bpm,
+    totalLength: rec.total_length,
   }));
 }

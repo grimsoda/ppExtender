@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { SeedInput } from './components/SeedInput';
 import { CohortPreview } from './components/CohortPreview';
+import type { Play } from './components/CohortPreview';
 import { RecommendationsList } from './components/RecommendationsList';
-import { fetchCohort, fetchRecommendations } from './api';
+import { fetchCohort, fetchRecommendations, fetchAllPlays } from './api';
 
 interface CohortData {
   size: number;
@@ -24,6 +25,11 @@ interface CohortData {
     pp: number;
     accuracy: number;
   }>;
+  plays: Play[];
+  seedPpRange: {
+    lower: number;
+    upper: number;
+  };
 }
 
 interface Recommendation {
@@ -36,6 +42,8 @@ interface Recommendation {
   accuracy: number;
   mods: string[];
   coverUrl: string;
+  bpm?: number;
+  totalLength?: number;
 }
 
 function App() {
@@ -44,12 +52,14 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [cohortData, setCohortData] = useState<CohortData | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [allPlays, setAllPlays] = useState<Play[]>([]);
 
-  const handleSubmit = async (params: { 
-    beatmapId: string; 
-    minPp: number; 
-    maxPp: number; 
-    mods: string[] 
+  const handleSubmit = async (params: {
+    beatmapId: string;
+    minPp: number;
+    maxPp: number;
+    mods: string[];
+    topK: number;
   }) => {
     setIsLoadingCohort(true);
     setIsLoadingRecommendations(false);
@@ -61,8 +71,22 @@ function App() {
     try {
       cohort = await fetchCohort(params);
       setCohortData(cohort);
+
+      // Fetch all plays for this beatmap (not filtered by PP range)
+      try {
+        const plays = await fetchAllPlays({ 
+          beatmapId: params.beatmapId, 
+          mods: params.mods,
+          topK: params.topK
+        });
+        setAllPlays(plays);
+      } catch (err) {
+        console.error('Failed to fetch all plays:', err);
+        setAllPlays([]);
+      }
     } catch (err) {
       setError('Failed to fetch cohort');
+      setAllPlays([]);
       setIsLoadingCohort(false);
       return;
     }
@@ -122,7 +146,7 @@ function App() {
               </div>
             )}
 
-            <CohortPreview cohort={cohortData} isLoading={isLoadingCohort} />
+            <CohortPreview cohort={cohortData} allPlays={allPlays} isLoading={isLoadingCohort} />
 
             <RecommendationsList 
               recommendations={recommendations} 

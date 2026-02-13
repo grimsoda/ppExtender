@@ -16,7 +16,7 @@ describe('SeedInput', () => {
     expect(screen.getByPlaceholderText(/enter beatmap id/i)).toBeInTheDocument();
   });
 
-  it('should render pp range sliders', () => {
+  it('should render pp range input fields', () => {
     render(<SeedInput onSubmit={mockOnSubmit} />);
     
     expect(screen.getByLabelText(/min pp/i)).toBeInTheDocument();
@@ -41,17 +41,17 @@ describe('SeedInput', () => {
     expect(input).toHaveValue('12345');
   });
 
-  it('should handle pp range slider changes', () => {
+  it('should handle pp range input changes', () => {
     render(<SeedInput onSubmit={mockOnSubmit} />);
-    
-    const minPpSlider = screen.getByLabelText(/min pp/i);
-    const maxPpSlider = screen.getByLabelText(/max pp/i);
-    
-    fireEvent.change(minPpSlider, { target: { value: '200' } });
-    fireEvent.change(maxPpSlider, { target: { value: '400' } });
-    
-    expect(minPpSlider).toHaveValue('200');
-    expect(maxPpSlider).toHaveValue('400');
+
+    const minPpInput = screen.getByLabelText(/min pp/i);
+    const maxPpInput = screen.getByLabelText(/max pp/i);
+
+    fireEvent.change(minPpInput, { target: { value: '200' } });
+    fireEvent.change(maxPpInput, { target: { value: '400' } });
+
+    expect(minPpInput).toHaveValue(200);
+    expect(maxPpInput).toHaveValue(400);
   });
 
   it('should handle mod checkbox toggles', () => {
@@ -69,19 +69,19 @@ describe('SeedInput', () => {
 
   it('should handle form submission with all values', async () => {
     render(<SeedInput onSubmit={mockOnSubmit} />);
-    
+
     const input = screen.getByLabelText(/beatmap id/i);
     fireEvent.change(input, { target: { value: '12345' } });
-    
-    const minPpSlider = screen.getByLabelText(/min pp/i);
-    fireEvent.change(minPpSlider, { target: { value: '200' } });
-    
+
+    const minPpInput = screen.getByLabelText(/min pp/i);
+    fireEvent.change(minPpInput, { target: { value: '200' } });
+
     const hdCheckbox = screen.getByLabelText(/hd/i);
     fireEvent.click(hdCheckbox);
-    
+
     const submitButton = screen.getByRole('button', { name: /submit/i });
     fireEvent.click(submitButton);
-    
+
     await waitFor(() => {
       expect(mockOnSubmit).toHaveBeenCalledWith({
         beatmapId: '12345',

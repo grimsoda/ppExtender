@@ -1,30 +1,52 @@
 import { useState } from 'react';
 
 interface SeedInputProps {
-  onSubmit: (params: { 
-    beatmapId: string; 
-    minPp: number; 
-    maxPp: number; 
-    mods: string[] 
+  onSubmit: (params: {
+    beatmapId: string;
+    minPp: number;
+    maxPp: number;
+    mods: string[];
+    topK: number;
   }) => void;
   isLoading?: boolean;
 }
 
-const AVAILABLE_MODS = ['HD', 'HR', 'DT', 'FL', 'EZ', 'HT', 'NC', 'SO', 'PF', 'SD'];
+const AVAILABLE_MODS = ['HD', 'HR', 'DT', 'FL', 'EZ', 'HT', 'NC'];
+
+const MOD_EXCLUSIVE_PAIRS: Record<string, string[]> = {
+  'HR': ['EZ'],
+  'EZ': ['HR'],
+  'DT': ['HT'],
+  'HT': ['DT'],
+  'NC': ['HT'],
+};
 
 export function SeedInput({ onSubmit, isLoading = false }: SeedInputProps) {
   const [beatmapId, setBeatmapId] = useState('');
   const [minPp, setMinPp] = useState(0);
   const [maxPp, setMaxPp] = useState(500);
+  const [topK, setTopK] = useState(200);
   const [selectedMods, setSelectedMods] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const handleModToggle = (mod: string) => {
-    setSelectedMods(prev =>
-      prev.includes(mod)
-        ? prev.filter(m => m !== mod)
-        : [...prev, mod]
-    );
+    setSelectedMods(prev => {
+      if (prev.includes(mod)) {
+        return prev.filter(m => m !== mod);
+      }
+      
+      const exclusiveMods = MOD_EXCLUSIVE_PAIRS[mod] || [];
+      const filtered = prev.filter(m => !exclusiveMods.includes(m));
+      
+      if (mod === 'DT' || mod === 'NC') {
+        if (!filtered.includes('DT') && !filtered.includes('NC')) {
+          return [...filtered, mod];
+        }
+        return filtered;
+      }
+      
+      return [...filtered, mod];
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -46,6 +68,7 @@ export function SeedInput({ onSubmit, isLoading = false }: SeedInputProps) {
       minPp,
       maxPp,
       mods: selectedMods,
+      topK,
     });
   };
 
@@ -75,16 +98,15 @@ export function SeedInput({ onSubmit, isLoading = false }: SeedInputProps) {
               Min PP
             </label>
             <input
-              type="range"
+              type="number"
               id="minPp"
               min="0"
-              max="1000"
+              max="2000"
               value={minPp}
-              onChange={(e) => setMinPp(Number(e.target.value))}
-              className="w-full"
+              onChange={(e) => setMinPp(Math.max(0, Number(e.target.value)))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={isLoading}
             />
-            <span className="text-sm text-gray-600">{minPp}</span>
           </div>
 
           <div>
@@ -92,17 +114,36 @@ export function SeedInput({ onSubmit, isLoading = false }: SeedInputProps) {
               Max PP
             </label>
             <input
-              type="range"
+              type="number"
               id="maxPp"
               min="0"
-              max="1000"
+              max="2000"
               value={maxPp}
-              onChange={(e) => setMaxPp(Number(e.target.value))}
-              className="w-full"
+              onChange={(e) => setMaxPp(Math.max(0, Number(e.target.value)))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={isLoading}
             />
-            <span className="text-sm text-gray-600">{maxPp}</span>
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="topK" className="block text-sm font-medium text-gray-700 mb-1">
+            Top K per user
+          </label>
+          <input
+            type="number"
+            id="topK"
+            min="50"
+            max="500"
+            step="50"
+            value={topK}
+            onChange={(e) => setTopK(Math.min(Math.max(Number(e.target.value) || 200, 50), 500))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            disabled={isLoading}
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Include players who have this beatmap in their top {topK} plays
+          </p>
         </div>
 
         <div>
