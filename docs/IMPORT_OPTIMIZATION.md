@@ -322,3 +322,75 @@ For maximum speed with minimum complexity:
 3. **Export to TSV** for DuckDB
 
 This should achieve 15-30 minute import time for all 24GB.
+
+---
+
+## Bug Fix Documentation: Script Exiting After First Table
+
+### Problem
+The `import_ultra_optimized.sh` script only processed the first table (`osu_counts`) then immediately exited to cleanup, without processing the remaining 12 tables.
+
+### Root Cause
+Bash arithmetic expansion `((var++))` returns exit code 1 when the expression evaluates to 0 (the initial value). With `set -euo pipefail` enabled, this triggered an immediate script exit.
+
+**Problematic code:**
+```bash
+local success_count=0
+for table in "${tables[@]}"; do
+    if import_table "$table"; then
+        ((success_count++))  # Evaluates to 0, returns exit code 1!
+    else
+        ((fail_count++))     # Same issue
+    fi
+done
+```
+
+### Solution
+Add `|| true` to arithmetic operations to ensure they always return exit code 0:
+
+```bash
+for table in "${tables[@]}"; do
+    if import_table "$table"; then
+        ((success_count++)) || true  # Always returns 0
+    else
+        ((fail_count++)) || true     # Always returns 0
+        log_warning "Continuing with next table..."
+    fi
+done
+```
+
+### Lines Changed
+- Line 438: `((success_count++))` → `((success_count++)) || true`
+- Line 440: `((fail_count++))` → `((fail_count++)) || true`
+
+---
+
+## MySQL Conditional Comments in SQL Dumps
+
+The SQL dump files contain **version-specific executable comments** that MySQL interprets as commands:
+
+```sql
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40000 ALTER TABLE `table_name` DISABLE KEYS */;
+```
+
+**Format**: `/*!version_number SQL_code */`
+
+**How they work:**
+- MySQL interprets these as executable commands (version-specific)
+- Other SQL parsers treat them as comments (ignored)
+- These are **automatically applied** when importing the dumps
+
+**Optimizations included:**
+1. `UNIQUE_CHECKS=0` - Skips unique constraint validation (huge speedup)
+2. `FOREIGN_KEY_CHECKS=0` - Skips foreign key validation
+3. `DISABLE KEYS` - Disables index updates during INSERT
+4. `LOCK TABLES` - Batches inserts for better performance
+
+**Version compatibility:**
+- `/*!40014 ... */` - MySQL 4.00.14+
+- `/*!40101 ... */` - MySQL 4.01.01+
+- `/*!50503 ... */` - MySQL 5.05.03+
+- Backwards compatible - older versions ignore newer directives
