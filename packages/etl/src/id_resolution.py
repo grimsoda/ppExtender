@@ -246,22 +246,37 @@ def build_id_lookup(
         if key in new_scores_index:
             candidates = new_scores_index[key]
 
-            # Check for exact match first
-            exact_matches = [
-                (nid, pp) for nid, pp in candidates if abs(pp - target_pp) < 1e-6
-            ]
-
-            if exact_matches:
-                # Use first exact match
-                lookup[legacy_id] = exact_matches[0][0]
-                stats.increment_exact()
-                matched = True
-            else:
-                # Fuzzy match: find closest pp
-                closest = min(candidates, key=lambda x: abs(x[1] - target_pp))
-                lookup[legacy_id] = closest[0]
+            # Check for exact match first (handle None pp values)
+            if target_pp is None:
+                # If target pp is None, match with first candidate (can't compare)
+                # This is a fuzzy match since we can't verify equality
+                lookup[legacy_id] = candidates[0][0]
                 stats.increment_fuzzy()
                 matched = True
+            else:
+                exact_matches = [
+                    (nid, pp)
+                    for nid, pp in candidates
+                    if pp is not None and abs(pp - target_pp) < 1e-6
+                ]
+
+                if exact_matches:
+                    # Use first exact match
+                    lookup[legacy_id] = exact_matches[0][0]
+                    stats.increment_exact()
+                    matched = True
+                else:
+                    # Fuzzy match: find closest pp (filter out None values)
+                    valid_candidates = [
+                        (nid, pp) for nid, pp in candidates if pp is not None
+                    ]
+                    if valid_candidates:
+                        closest = min(
+                            valid_candidates, key=lambda x: abs(x[1] - target_pp)
+                        )
+                        lookup[legacy_id] = closest[0]
+                        stats.increment_fuzzy()
+                        matched = True
 
         if not matched:
             stats.increment_unmatched(legacy_id=legacy_id)
