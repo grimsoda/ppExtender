@@ -1,8 +1,11 @@
 """DuckDB pipeline for creating silver and gold tables from Parquet bronze layer."""
 
+import logging
 from pathlib import Path
 from typing import Optional, Union
 import duckdb
+
+logger = logging.getLogger(__name__)
 
 
 class DuckDBPipeline:
@@ -260,6 +263,81 @@ class DuckDBPipeline:
             GROUP BY beatmap_id, mods_key
         """
         conn.execute(query)
+
+    def create_mart_score_id_resolution(self) -> None:
+        """
+        Create mart_score_id_resolution table mapping legacy score IDs to new score IDs.
+
+        This table enables lookup of new score IDs from legacy osu_scores_high IDs
+        during the migration from legacy to new schema.
+
+        Match Strategy:
+            - Exact Match: (user_id, beatmap_id, mods_key, pp) all match exactly
+            - Fuzzy Match: (user_id, beatmap_id, mods_key) match with different pp
+            - Unmatched: Legacy IDs with no corresponding new score are excluded
+        """
+        conn = self.connect()
+
+        # Drop existing table if exists
+        conn.execute("DROP TABLE IF EXISTS mart_score_id_resolution")
+
+        # Create ID resolution table with CTAS
+        query = """
+            CREATE TABLE mart_score_id_resolution AS
+            WITH high_scores AS (
+                SELECT score_id as legacy_id, user_id, beatmap_id, mods_key, pp
+                FROM raw_osu_scores_high
+            ),
+            new_scores AS (
+                SELECT id as new_id, user_id, beatmap_id, mods_key, pp
+                FROM raw_scores
+            )
+            SELECT 
+                h.legacy_id,
+                n.new_id,
+                CASE WHEN h.pp = n.pp THEN 'exact' ELSE 'fuzzy' END as match_type,
+                1.0 / (1.0 + ABS(h.pp - n.pp)) as confidence
+            FROM high_scores h
+            LEFT JOIN new_scores n 
+                ON h.user_id = n.user_id 
+                AND h.beatmap_id = n.beatmap_id
+                AND h.mods_key = n.mods_key
+            WHERE n.new_id IS NOT NULL
+        """
+        conn.execute(query)
+
+        # Create indexes for fast lookups
+        conn.execute("DROP INDEX IF EXISTS idx_mart_score_id_resolution_legacy_id")
+        conn.execute("DROP INDEX IF EXISTS idx_mart_score_id_resolution_new_id")
+
+        conn.execute("""
+            CREATE INDEX idx_mart_score_id_resolution_legacy_id 
+            ON mart_score_id_resolution(legacy_id)
+        """)
+
+        conn.execute("""
+            CREATE INDEX idx_mart_score_id_resolution_new_id 
+            ON mart_score_id_resolution(new_id)
+        """)
+
+        # Log statistics
+        result = conn.execute("""
+            SELECT 
+                COUNT(*) as total_rows,
+                COUNT(CASE WHEN match_type = 'exact' THEN 1 END) as exact_count,
+                COUNT(CASE WHEN match_type = 'fuzzy' THEN 1 END) as fuzzy_count,
+                AVG(confidence) as avg_confidence
+            FROM mart_score_id_resolution
+        """).fetchone()
+
+        total_rows, exact_count, fuzzy_count, avg_confidence = result
+        exact_rate = (exact_count / total_rows * 100) if total_rows > 0 else 0
+
+        logger.info(
+            f"mart_score_id_resolution created: {total_rows} rows "
+            f"({exact_rate:.1f}% exact, {100 - exact_rate:.1f}% fuzzy, "
+            f"avg confidence: {avg_confidence:.3f})"
+        )
 
     def create_indexes(self) -> None:
         """
