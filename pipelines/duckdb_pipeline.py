@@ -77,85 +77,160 @@ class DuckDBPipeline:
         conn.execute(query)
 
     def create_stg_scores(self) -> None:
-        """Create stg_scores with playmode filtering."""
+        """Create stg_scores with ruleset_id filtering (0 = osu!standard)."""
         conn = self.connect()
 
         # Drop existing table if exists
         conn.execute("DROP TABLE IF EXISTS stg_scores")
 
-        # Create stg_scores with playmode=0 filter
+        # Create stg_scores with ruleset_id=0 filter (osu!standard)
+        # Extract mods from data JSON and calculate speed_mod
         query = """
             CREATE TABLE stg_scores AS
-            SELECT 
+            SELECT
                 id,
                 user_id,
                 beatmap_id,
-                score,
+                total_score as score,
                 pp,
-                playmode,
+                accuracy,
+                ruleset_id,
+                rank,
+                max_combo,
                 data,
-                mods_key,
-                speed_mod
+                -- Extract mods from JSON data field
+                CASE
+                    WHEN json_extract(data, '$.mods') IS NOT NULL
+                    THEN json_extract(data, '$.mods')
+                    ELSE 'NM'
+                END as mods_key,
+                -- Calculate speed mod based on mods
+                CASE
+                    WHEN json_extract(data, '$.mods') LIKE '%DT%' OR json_extract(data, '$.mods') LIKE '%NC%' THEN 'DT'
+                    WHEN json_extract(data, '$.mods') LIKE '%HT%' THEN 'HT'
+                    ELSE 'NM'
+                END as speed_mod
             FROM raw_scores
-            WHERE playmode = 0
+            WHERE ruleset_id = 0
         """
         conn.execute(query)
 
     def create_mart_best_scores(self) -> None:
-        """Create mart_best_scores with deduplication."""
+        """Create mart_best_scores with deduplication using iterative batch processing."""
         conn = self.connect()
 
-        # Drop existing table if exists
+        conn.execute("SET preserve_insertion_order = false")
+        conn.execute("SET threads = 2")
+
         conn.execute("DROP TABLE IF EXISTS mart_best_scores")
+        conn.execute("DROP TABLE IF EXISTS temp_best_scores")
 
-        # Create mart_best_scores with ROW_NUMBER deduplication
-        query = """
-            CREATE TABLE mart_best_scores AS
-            SELECT 
-                id,
-                user_id,
-                beatmap_id,
-                score,
-                pp,
-                data,
-                mods_key,
-                speed_mod
-            FROM (
-                SELECT *,
-                       ROW_NUMBER() OVER (PARTITION BY user_id, beatmap_id, mods_key ORDER BY pp DESC) as rn
+        # Create empty result table
+        conn.execute("""
+            CREATE TABLE mart_best_scores (
+                id UBIGINT,
+                user_id UINTEGER,
+                beatmap_id UINTEGER,
+                score UBIGINT,
+                pp FLOAT,
+                accuracy FLOAT,
+                rank VARCHAR,
+                max_combo UINTEGER,
+                data VARCHAR,
+                mods_key VARCHAR,
+                speed_mod VARCHAR
+            )
+        """)
+
+        # Get distinct user_id ranges
+        conn.execute("""
+            CREATE TEMPORARY TABLE user_ranges AS
+            SELECT user_id, NTILE(10) OVER (ORDER BY user_id) as batch_num
+            FROM (SELECT DISTINCT user_id FROM stg_scores)
+        """)
+
+        # Process each batch
+        for batch in range(1, 11):
+            conn.execute(f"""
+                INSERT INTO mart_best_scores
+                SELECT
+                    id,
+                    user_id,
+                    beatmap_id,
+                    score,
+                    pp,
+                    accuracy,
+                    rank,
+                    max_combo,
+                    data,
+                    mods_key,
+                    speed_mod
                 FROM stg_scores
-            ) ranked
-            WHERE rn = 1
-        """
-        conn.execute(query)
+                WHERE user_id IN (SELECT user_id FROM user_ranges WHERE batch_num = {batch})
+                QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id, beatmap_id, mods_key ORDER BY pp DESC) = 1
+            """)
 
-    def create_mart_user_topk(self) -> None:
-        """Create mart_user_topk with top 100 per user/speed_mod."""
+        conn.execute("DROP TABLE user_ranges")
+
+    def create_mart_user_topk(self, top_k: int = 500) -> None:
+        """Create mart_user_topk with top_k per user/speed_mod using batch processing.
+
+        Args:
+            top_k: Number of top scores to include per user per speed_mod (default: 500)
+        """
         conn = self.connect()
 
-        # Drop existing table if exists
+        conn.execute("SET preserve_insertion_order = false")
+        conn.execute("SET threads = 2")
+
         conn.execute("DROP TABLE IF EXISTS mart_user_topk")
 
-        # Create mart_user_topk with top 100 per user/speed_mod
-        query = """
-            CREATE TABLE mart_user_topk AS
-            SELECT 
-                id,
-                user_id,
-                beatmap_id,
-                score,
-                pp,
-                data,
-                mods_key,
-                speed_mod
-            FROM (
-                SELECT *,
-                       ROW_NUMBER() OVER (PARTITION BY user_id, speed_mod ORDER BY pp DESC) as rn
+        # Create empty result table
+        conn.execute("""
+            CREATE TABLE mart_user_topk (
+                id UBIGINT,
+                user_id UINTEGER,
+                beatmap_id UINTEGER,
+                score UBIGINT,
+                pp FLOAT,
+                accuracy FLOAT,
+                rank VARCHAR,
+                max_combo UINTEGER,
+                data VARCHAR,
+                mods_key VARCHAR,
+                speed_mod VARCHAR
+            )
+        """)
+
+        # Get distinct user_id ranges
+        conn.execute("""
+            CREATE TEMPORARY TABLE user_ranges_topk AS
+            SELECT user_id, NTILE(10) OVER (ORDER BY user_id) as batch_num
+            FROM (SELECT DISTINCT user_id FROM mart_best_scores)
+        """)
+
+        # Process each batch
+        for batch in range(1, 11):
+            conn.execute(f"""
+                INSERT INTO mart_user_topk
+                SELECT
+                    id,
+                    user_id,
+                    beatmap_id,
+                    score,
+                    pp,
+                    accuracy,
+                    rank,
+                    max_combo,
+                    data,
+                    mods_key,
+                    speed_mod
                 FROM mart_best_scores
-            ) ranked
-            WHERE rn <= 100
-        """
-        conn.execute(query)
+                WHERE user_id IN (SELECT user_id FROM user_ranges_topk WHERE batch_num = {batch})
+                QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id, speed_mod ORDER BY pp DESC) <= {top_k}
+            """)
+
+        conn.execute("DROP TABLE user_ranges_topk")
 
     def create_mart_beatmap_user_sets(self) -> None:
         """
@@ -209,6 +284,67 @@ class DuckDBPipeline:
             ON mart_best_scores(user_id, beatmap_id, pp)
         """)
 
+    def create_api_views(self) -> None:
+        conn = self.connect()
+
+        conn.execute("""
+            CREATE OR REPLACE VIEW user_beatmap_playcount AS
+            SELECT
+                mbs.user_id,
+                mbs.beatmap_id,
+                mbs.score,
+                mbs.pp,
+                mbs.mods_key as mods,
+                mbs.accuracy,
+                mbs.rank,
+                COALESCE(ubp.playcount, 1) as playcount
+            FROM mart_best_scores mbs
+            LEFT JOIN raw_osu_user_beatmap_playcount ubp
+                ON mbs.user_id = ubp.user_id
+                AND mbs.beatmap_id = ubp.beatmap_id
+        """)
+
+        conn.execute("""
+            CREATE OR REPLACE VIEW beatmaps AS
+            SELECT 
+                b.beatmap_id,
+                b.beatmapset_id,
+                bs.title,
+                bs.artist,
+                b.version,
+                bs.creator,
+                b.difficultyrating as difficulty_rating,
+                COALESCE(b.bpm, bs.bpm) as bpm,
+                b.total_length,
+                b.hit_length,
+                b.playmode as mode,
+                b.approved as status,
+                b.countTotal,
+                b.countNormal,
+                b.countSlider,
+                b.countSpinner,
+                b.diff_drain,
+                b.diff_size,
+                b.diff_overall,
+                b.diff_approach,
+                b.max_combo,
+                b.playcount,
+                b.passcount
+            FROM raw_osu_beatmaps b
+            LEFT JOIN raw_osu_beatmapsets bs ON b.beatmapset_id = bs.beatmapset_id
+        """)
+        conn.execute("""
+            CREATE OR REPLACE VIEW users AS
+            SELECT 
+                user_id,
+                CAST(user_id as VARCHAR) as username,
+                rank_score as pp_raw,
+                accuracy,
+                playcount,
+                level
+            FROM raw_osu_user_stats
+        """)
+
     def run_full_pipeline(
         self, parquet_dir: Union[str, Path], tables: Optional[list] = None
     ) -> dict:
@@ -226,8 +362,8 @@ class DuckDBPipeline:
         self.create_mart_user_topk()
         self.create_mart_beatmap_user_sets()
 
-        # Create indexes
         self.create_indexes()
+        self.create_api_views()
 
         # Get table counts for manifest
         conn = self.connect()

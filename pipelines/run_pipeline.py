@@ -38,7 +38,7 @@ DATA_VERSION = "2026-02"
 WAREHOUSE_DIR = f"data/warehouse/{DATA_VERSION}"
 INGEST_DIR = f"data/ingest/{DATA_VERSION}"
 SQL_DIR = f"{INGEST_DIR}/sql"
-PARQUET_DIR = f"{INGEST_DIR}/bronze_parquet"
+PARQUET_DIR = "data/parquet"
 
 TABLES = [
     "scores",
@@ -165,7 +165,7 @@ class PipelineRunner:
         pipeline = DuckDBPipeline(warehouse_dir=WAREHOUSE_DIR, database_name="osu")
 
         for table in TABLES:
-            parquet_path = Path(f"{PARQUET_DIR}/{table}")
+            parquet_path = Path(f"{PARQUET_DIR}/{table}/data.parquet")
             parquet_glob = f"{parquet_path}/*.parquet"
 
             if not parquet_path.exists():
@@ -223,7 +223,7 @@ class PipelineRunner:
             if dry_run:
                 logger.info("  [DRY RUN] Would create mart_user_topk")
             else:
-                pipeline.create_mart_user_topk()
+                pipeline.create_mart_user_topk(top_k=500)
                 logger.info("  ✓ Created mart_user_topk")
 
             logger.info("Creating mart_beatmap_user_sets...")
