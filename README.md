@@ -114,38 +114,44 @@ flowchart TB
 
 ```
 /run/media/work/OS/ppExtender/
+├── packages/                        # Turborepo workspace packages
+│   ├── etl/                        # Python ETL pipelines
+│   │   ├── sql_parser.py          # Streaming SQL parser
+│   │   ├── parquet_writer.py      # Parquet file writer
+│   │   ├── duckdb_pipeline.py     # DuckDB pipeline
+│   │   ├── run_pipeline.py        # Full pipeline orchestrator
+│   │   ├── recommender_queries.py # Query logic
+│   │   └── tests/                 # Python tests
+│   ├── server/                     # Node/TS Backend
+│   │   ├── src/
+│   │   │   ├── index.ts          # Express API entry
+│   │   │   └── trpc.ts           # tRPC router
+│   │   └── tests/                # Backend tests
+│   ├── app/                        # React Frontend
+│   │   ├── src/
+│   │   │   ├── components/       # React components
+│   │   │   │   ├── SeedInput.tsx
+│   │   │   │   ├── CohortPreview.tsx
+│   │   │   │   ├── RecommendationsList.tsx
+│   │   │   │   └── BeatmapCard.tsx
+│   │   │   ├── api.ts           # tRPC client
+│   │   │   └── App.tsx
+│   │   └── tests/               # Frontend tests
+│   └── shared/                     # Shared TypeScript utilities
+│       ├── src/
+│       └── tests/
 ├── data/
-│   ├── ingest/2026-02/sql/          # SQL dump files
-│   ├── parquet/                     # Parquet files (exported from MySQL)
-│   └── warehouse/2026-02/           # DuckDB database
-├── pipelines/                       # Python ETL
-│   ├── sql_parser.py               # Streaming SQL parser
-│   ├── parquet_writer.py           # Parquet file writer
-│   ├── duckdb_pipeline.py          # DuckDB pipeline
-│   ├── run_pipeline.py             # Full pipeline orchestrator
-│   └── recommender_queries.py      # Query logic
-├── scripts/                         # Utility scripts
-│   ├── import_with_monitoring.sh   # MySQL import with optimizations
-│   ├── export_to_parquet.sh        # MySQL to Parquet export
-│   ├── final_import_all_tables.sh  # Complete import pipeline
-│   └── recover_mariadb.sh          # MariaDB recovery utility
-├── server/                          # Node/TS Backend
-│   └── src/
-│       └── index.ts                # Express API
-├── app/                             # React Frontend
-│   └── src/
-│       ├── components/             # React components
-│       │   ├── SeedInput.tsx
-│       │   ├── CohortPreview.tsx
-│       │   ├── RecommendationsList.tsx
-│       │   └── BeatmapCard.tsx
-│       ├── api.ts                  # API client
-│       └── App.tsx
-└── tests/                          # Python tests
-    ├── test_sql_parser.py
-    ├── test_parquet_writer.py
-    ├── test_duckdb_pipeline.py
-    └── test_recommender_queries.py
+│   ├── ingest/2026-02/sql/        # SQL dump files
+│   ├── parquet/                   # Parquet files (exported from MySQL)
+│   └── warehouse/2026-02/         # DuckDB database
+├── scripts/                       # Utility scripts
+│   ├── import_with_monitoring.sh  # MySQL import with optimizations
+│   ├── export_to_parquet.sh       # MySQL to Parquet export
+│   ├── final_import_all_tables.sh # Complete import pipeline
+│   └── recover_mariadb.sh         # MariaDB recovery utility
+├── turbo.json                     # Turborepo config
+├── package.json                   # Root package.json with workspaces
+└── README.md                      # This file
 ```
 
 ## Quick Start
@@ -153,14 +159,14 @@ flowchart TB
 ### Prerequisites
 
 - Python 3.10+
-- Node.js 18+
+- Bun 1.3+ (or Node.js 18+ with npm)
 - MariaDB/MySQL (for initial data import)
-- npm or yarn
 
 ### Python Environment Setup
 
 ```bash
-# Create virtual environment
+# Create virtual environment in packages/etl
+cd packages/etl
 python -m venv venv
 
 # Activate virtual environment
@@ -172,40 +178,84 @@ venv\Scripts\activate     # Windows
 pip install pyarrow duckdb
 ```
 
-### Node.js Backend Setup
+### Install Dependencies
 
 ```bash
-cd server
-
-# Install dependencies
+# From the project root, install all workspace dependencies
+bun install
+# or
 npm install
-
-# Run in development mode
-npm run dev
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
 ```
 
-### React Frontend Setup
+## Development
+
+This project uses **Turborepo** for monorepo orchestration. All development commands should be run from the project root.
+
+### Start Development Server
 
 ```bash
-cd app
+# Start both backend and frontend in development mode
+bun turbo dev
 
-# Install dependencies
-npm install
-
-# Run development server
+# Or using npm
 npm run dev
+```
 
-# Build for production
+This starts:
+- Backend server on http://localhost:3000
+- Frontend dev server on http://localhost:5173
+
+### Build for Production
+
+```bash
+# Build all packages
+bun turbo build
+
+# Or using npm
 npm run build
+```
 
-# Run tests
-npm test
+### Run Tests
+
+```bash
+# Run all tests across packages
+bun turbo test
+
+# Or using npm
+npm run test
+```
+
+### Available Turbo Tasks
+
+| Command | Description |
+|---------|-------------|
+| `bun turbo dev` | Start all dev servers (parallel, no cache) |
+| `bun turbo build` | Build all packages |
+| `bun turbo test` | Run all tests |
+| `bun turbo lint` | Run linting on all packages |
+| `bun turbo clean` | Clean build artifacts |
+
+### Individual Package Commands
+
+If you need to work on a specific package:
+
+```bash
+# Backend only
+cd packages/server
+bun run dev      # Start backend dev server
+bun run build    # Build backend
+bun run test     # Run backend tests
+
+# Frontend only
+cd packages/app
+bun run dev      # Start frontend dev server
+bun run build    # Build frontend
+bun run test     # Run frontend tests
+
+# ETL only
+cd packages/etl
+source venv/bin/activate
+python run_pipeline.py --phase silver
 ```
 
 ## Data Pipeline Workflow
@@ -276,15 +326,19 @@ data/parquet/
 Load Parquet files into DuckDB and create analytics tables:
 
 ```bash
+# Navigate to ETL package
+cd packages/etl
+source venv/bin/activate
+
 # Skip bronze (already done via export script), run silver + gold only
-python pipelines/run_pipeline.py --phase silver   # Parquet → DuckDB raw tables
-python pipelines/run_pipeline.py --phase gold     # Raw → Staging → Mart tables
+python run_pipeline.py --phase silver   # Parquet → DuckDB raw tables
+python run_pipeline.py --phase gold     # Raw → Staging → Mart tables
 
 # Or run both phases together
-python pipelines/run_pipeline.py --phase silver && python pipelines/run_pipeline.py --phase gold
+python run_pipeline.py --phase silver && python run_pipeline.py --phase gold
 
 # Dry run to see what would be executed
-python pipelines/run_pipeline.py --phase silver --dry-run
+python run_pipeline.py --phase silver --dry-run
 ```
 
 **Pipeline Stages:**
@@ -478,10 +532,12 @@ Common HTTP status codes:
 
 ## Testing Instructions
 
-### Python Tests
+### Python Tests (ETL)
 
 ```bash
 # Run all Python tests
+cd packages/etl
+source venv/bin/activate
 pytest tests/
 
 # Run specific test file
@@ -491,22 +547,28 @@ pytest tests/test_duckdb_pipeline.py
 pytest tests/test_recommender_queries.py
 
 # Run with coverage
-pytest tests/ --cov=pipelines --cov-report=html
+pytest tests/ --cov=. --cov-report=html
 ```
 
-### Node.js Backend Tests
+### Backend Tests
 
 ```bash
-cd server
-npm test
+# From project root
+bun turbo test --filter=server
+
+# Or from packages/server directory
+cd packages/server
+bun run test
 ```
 
-### React Frontend Tests
+### Frontend Tests
 
 ```bash
-cd app
-npm test
-# or
+# From project root
+bun turbo test --filter=app
+
+# Or from packages/app directory
+cd packages/app
 bun run test
 # or shorthand
 bun t

@@ -96,23 +96,30 @@ export const recommenderRouter = router({
       try {
         let query = `
           SELECT
-            id,
-            user_id,
-            beatmap_id,
-            pp,
-            mods_key as mods,
-            accuracy,
-            score,
-            rank,
-            max_combo,
-            json_extract(data, '$.statistics.great') as count300,
-            json_extract(data, '$.statistics.ok') as count100,
-            json_extract(data, '$.statistics.meh') as count50,
-            json_extract(data, '$.statistics.miss') as countmiss,
-            json_extract(data, '$.statistics.large_tick_miss') as count_slider_breaks
-          FROM mart_user_topk
-          WHERE beatmap_id = ?
-            AND pp BETWEEN ? AND ?
+            t.id,
+            t.user_id,
+            t.beatmap_id,
+            t.pp,
+            t.mods_key as mods,
+            t.accuracy,
+            t.score,
+            t.rank,
+            t.speed_mod,
+            json_extract(t.data, '$.statistics.great') as count300,
+            json_extract(t.data, '$.statistics.ok') as count100,
+            json_extract(t.data, '$.statistics.meh') as count50,
+            json_extract(t.data, '$.statistics.miss') as countmiss,
+            json_extract(t.data, '$.statistics.large_tick_miss') as count_slider_breaks,
+            su.username,
+            st.rank_score_index as global_rank,
+            (SELECT COUNT(*) + 1 FROM mart_best_scores b
+             WHERE b.user_id = t.user_id
+             AND b.pp > t.pp) as play_rank_approx
+          FROM mart_user_topk t
+          LEFT JOIN raw_sample_users su ON t.user_id = su.user_id
+          LEFT JOIN raw_osu_user_stats st ON t.user_id = st.user_id
+          WHERE t.beatmap_id = ?
+            AND t.pp BETWEEN ? AND ?
         `;
 
         const params: (number | string)[] = [beatmap_id, pp_lower, pp_upper];
@@ -123,7 +130,7 @@ export const recommenderRouter = router({
           const filteredMods = modsArray.filter((m: string) => m !== 'CL').sort();
           if (filteredMods.length === 1) {
             const mod = filteredMods[0];
-            query += ` AND (mods_key = ? OR mods_key LIKE ? OR mods_key LIKE ?)`;
+            query += ` AND (t.mods_key = ? OR t.mods_key LIKE ? OR t.mods_key LIKE ?)`;
             params.push(
               JSON.stringify([{ acronym: mod }]),
               `%${JSON.stringify([{ acronym: mod }])}%`,
@@ -132,22 +139,31 @@ export const recommenderRouter = router({
           } else {
             const modsJson = JSON.stringify(filteredMods.map((m: string) => ({ acronym: m })));
             const modsWithCl = JSON.stringify([...filteredMods.map((m: string) => ({ acronym: m })), { acronym: "CL" }]);
-            query += ` AND (mods_key = ? OR mods_key LIKE ?)`;
+            query += ` AND (t.mods_key = ? OR t.mods_key LIKE ?)`;
             params.push(modsJson, `%${modsWithCl}%`);
           }
         } else {
           for (const mod of availableMods) {
-            query += ` AND mods_key NOT LIKE ?`;
+            query += ` AND t.mods_key NOT LIKE ?`;
             params.push(`%acronym":"${mod}"%`);
           }
         }
 
-        query += ` ORDER BY pp DESC LIMIT ${k}`;
+        query += ` ORDER BY t.pp DESC LIMIT ${k}`;
 
         const rows = await connection.query(query, params);
 
         if (rows.length === 0) {
-          throw new Error('Beatmap not found');
+          // Return empty cohort instead of error - beatmap may have no plays with these filters
+          return {
+            beatmap_id,
+            cohort_size: 0,
+            pp_distribution: { min: 0, max: 0, mean: 0, median: 0 },
+            accuracy_distribution: { min: 0, max: 0, mean: 0, median: 0 },
+            top_players: [],
+            plays: [],
+            seed_pp_range: { lower: pp_lower, upper: pp_upper }
+          };
         }
 
         const beatmapRows = await connection.query(
@@ -180,7 +196,8 @@ export const recommenderRouter = router({
 
         const topPlayers = rows.slice(0, 10).map((row: any) => ({
           userId: Number(row.user_id),
-          username: String(row.user_id),
+          username: row.username || String(row.user_id),
+          globalRank: row.global_rank || null,
           pp: Number(row.pp),
           accuracy: Math.round((Number(row.accuracy) || 0.95) * 100 * 100) / 100
         }));
@@ -188,6 +205,9 @@ export const recommenderRouter = router({
         const allPlays = rows.map((row: any) => ({
           scoreId: Number(row.id),
           userId: Number(row.user_id),
+          username: row.username || String(row.user_id),
+          globalRank: row.global_rank || null,
+          playRank: row.play_rank_approx || null,
           pp: Number(row.pp),
           accuracy: Math.round((Number(row.accuracy) || 0.95) * 100 * 100) / 100,
           score: Number(row.score) || 0,
@@ -254,7 +274,6 @@ export const recommenderRouter = router({
             accuracy,
             score,
             rank,
-            max_combo,
             json_extract(data, '$.statistics.great') as count300,
             json_extract(data, '$.statistics.ok') as count100,
             json_extract(data, '$.statistics.meh') as count50,
@@ -296,7 +315,11 @@ export const recommenderRouter = router({
         const rows = await connection.query(query, params);
 
         if (rows.length === 0) {
-          throw new Error('Beatmap not found');
+          return {
+            beatmap_id,
+            total_plays: 0,
+            all_plays: []
+          };
         }
 
         const beatmapRows = await connection.query(
@@ -334,7 +357,7 @@ export const recommenderRouter = router({
 
   /**
    * Get recommendations for a beatmap
-   * Mirrors POST /api/recommend
+   * Uses a single optimized query with CTE for better performance
    */
   getRecommendations: publicProcedure
     .input(GetRecommendationsInput)
@@ -353,23 +376,18 @@ export const recommenderRouter = router({
           throw new Error('Beatmap not found');
         }
 
-        let cohortQuery = `
-          SELECT DISTINCT user_id
-          FROM user_beatmap_playcount
-          WHERE beatmap_id = ?
-            AND pp BETWEEN ? AND ?
-        `;
-
-        const cohortParams: (number | string)[] = [beatmap_id, pp_lower, pp_upper];
         const modsArray = mods !== undefined && mods !== null ? mods : [];
         const availableMods = ['HD', 'HR', 'DT', 'FL', 'EZ', 'HT', 'NC'];
+        
+        let modsFilter = '';
+        const modsParams: string[] = [];
         
         if (modsArray.length > 0) {
           const filteredMods = modsArray.filter((m: string) => m !== 'CL').sort();
           if (filteredMods.length === 1) {
             const mod = filteredMods[0];
-            cohortQuery += ` AND (mods = ? OR mods LIKE ? OR mods LIKE ?)`;
-            cohortParams.push(
+            modsFilter = ` AND (mods = ? OR mods LIKE ? OR mods LIKE ?)`;
+            modsParams.push(
               JSON.stringify([{ acronym: mod }]),
               `%${JSON.stringify([{ acronym: mod }])}%`,
               `%${JSON.stringify([{ acronym: mod }, { acronym: "CL" }])}%`
@@ -377,30 +395,24 @@ export const recommenderRouter = router({
           } else {
             const modsJson = JSON.stringify(filteredMods.map((m: string) => ({ acronym: m })));
             const modsWithCl = JSON.stringify([...filteredMods.map((m: string) => ({ acronym: m })), { acronym: "CL" }]);
-            cohortQuery += ` AND (mods = ? OR mods LIKE ?)`;
-            cohortParams.push(modsJson, `%${modsWithCl}%`);
+            modsFilter = ` AND (mods = ? OR mods LIKE ?)`;
+            modsParams.push(modsJson, `%${modsWithCl}%`);
           }
         } else {
           for (const mod of availableMods) {
-            cohortQuery += ` AND mods NOT LIKE ?`;
-            cohortParams.push(`%acronym":"${mod}"%`);
+            modsFilter += ` AND mods NOT LIKE ?`;
+            modsParams.push(`%acronym":"${mod}"%`);
           }
         }
 
-        const cohortRows = await connection.query(cohortQuery, cohortParams);
-
-        if (cohortRows.length === 0) {
-          return {
-            beatmap_id,
-            total: 0,
-            recommendations: []
-          };
-        }
-
-        const userIds = cohortRows.map((row: any) => row.user_id as number);
-
-        const placeholders = userIds.map(() => '?').join(',');
-        let recommendQuery = `
+        const query = `
+          WITH cohort AS (
+            SELECT DISTINCT user_id
+            FROM user_beatmap_playcount
+            WHERE beatmap_id = ?
+              AND pp BETWEEN ? AND ?
+              ${modsFilter}
+          )
           SELECT
             ub.beatmap_id,
             b.beatmapset_id,
@@ -413,10 +425,11 @@ export const recommenderRouter = router({
             b.total_length,
             COUNT(DISTINCT ub.user_id) as play_count,
             AVG(ub.pp) as avg_pp,
-            AVG(ub.accuracy) as avg_accuracy
+            AVG(ub.accuracy) as avg_accuracy,
+            (SELECT COUNT(*) FROM cohort) as cohort_size
           FROM user_beatmap_playcount ub
           JOIN beatmaps b ON ub.beatmap_id = b.beatmap_id
-          WHERE ub.user_id IN (${placeholders})
+          WHERE ub.user_id IN (SELECT user_id FROM cohort)
             AND ub.beatmap_id != ?
             AND ub.pp BETWEEN ? AND ?
           GROUP BY ub.beatmap_id, b.beatmapset_id, b.title, b.artist, b.version, b.creator,
@@ -425,15 +438,14 @@ export const recommenderRouter = router({
           LIMIT ?
         `;
 
-        const recommendParams = [
-          ...userIds,
-          beatmap_id,
-          pp_lower,
-          pp_upper,
-          limit
+        const params = [
+          beatmap_id, pp_lower, pp_upper,
+          ...modsParams,
+          beatmap_id, pp_lower, pp_upper, limit
         ];
 
-        const recommendRows = await connection.query(recommendQuery, recommendParams);
+        const recommendRows = await connection.query(query, params);
+        const cohortSize = recommendRows.length > 0 ? Number(recommendRows[0].cohort_size) : 0;
 
         return {
           beatmap_id,
@@ -451,7 +463,7 @@ export const recommenderRouter = router({
             play_count: Number(row.play_count),
             avg_pp: Math.round((row.avg_pp as number) * 100) / 100,
             avg_accuracy: Math.round((row.avg_accuracy as number) * 100) / 100,
-            similarity_score: Math.round(Number(row.play_count) / userIds.length * 100) / 100
+            similarity_score: cohortSize > 0 ? Math.round(Number(row.play_count) / cohortSize * 100) / 100 : 0
           }))
         };
       } finally {

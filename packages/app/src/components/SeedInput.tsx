@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useGetCohort, useGetRecommendations } from '../api-hooks';
+import { useGetCohort } from '../api-hooks';
 
 interface SeedInputProps {
   onSubmitStart?: () => void;
@@ -49,20 +49,9 @@ interface SeedInputProps {
     beatmapId: number;
     mods: string[];
     topK: number;
+    ppLower: number;
+    ppUpper: number;
   }) => void;
-  onRecommendations?: (recommendations: Array<{
-    beatmapId: number;
-    title: string;
-    artist: string;
-    difficulty: string;
-    stars: number;
-    pp: number;
-    accuracy: number;
-    mods: string[];
-    coverUrl: string;
-    bpm?: number;
-    totalLength?: number;
-  }>) => void;
   onError?: (error: string) => void;
 }
 
@@ -76,7 +65,7 @@ const MOD_EXCLUSIVE_PAIRS: Record<string, string[]> = {
   'NC': ['HT'],
 };
 
-export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onBeatmapParams, onRecommendations, onError }: SeedInputProps) {
+export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onBeatmapParams, onError }: SeedInputProps) {
   const [beatmapId, setBeatmapId] = useState('');
   const [minPp, setMinPp] = useState(0);
   const [maxPp, setMaxPp] = useState(500);
@@ -102,17 +91,6 @@ export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onBeat
     }
   );
 
-  const recommendationsQuery = useGetRecommendations(
-    submittedParams?.beatmapId || 0,
-    {
-      pp_lower: submittedParams?.minPp,
-      pp_upper: submittedParams?.maxPp,
-      mods: submittedParams?.mods,
-      top_k: submittedParams?.topK,
-      limit: 20,
-    }
-  );
-
   useEffect(() => {
     if (cohortQuery.data && onCohortData) {
       onCohortData(cohortQuery.data);
@@ -125,15 +103,11 @@ export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onBeat
         beatmapId: submittedParams.beatmapId,
         mods: submittedParams.mods,
         topK: submittedParams.topK,
+        ppLower: submittedParams.minPp,
+        ppUpper: submittedParams.maxPp,
       });
     }
   }, [submittedParams, onBeatmapParams]);
-
-  useEffect(() => {
-    if (recommendationsQuery.data && onRecommendations) {
-      onRecommendations(recommendationsQuery.data);
-    }
-  }, [recommendationsQuery.data, onRecommendations]);
 
   useEffect(() => {
     if (cohortQuery.error && onError) {
@@ -141,13 +115,13 @@ export function SeedInput({ onSubmitStart, onLoadingChange, onCohortData, onBeat
     }
   }, [cohortQuery.error, onError]);
 
-  const isLoading = cohortQuery.isLoading || recommendationsQuery.isLoading;
+  const isLoading = cohortQuery.isLoading;
 
   useEffect(() => {
     if (onLoadingChange) {
-      onLoadingChange(cohortQuery.isLoading, recommendationsQuery.isLoading);
+      onLoadingChange(cohortQuery.isLoading, false);
     }
-  }, [cohortQuery.isLoading, recommendationsQuery.isLoading, onLoadingChange]);
+  }, [cohortQuery.isLoading, onLoadingChange]);
 
   const handleModToggle = (mod: string) => {
     setSelectedMods(prev => {

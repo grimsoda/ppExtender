@@ -1,12 +1,12 @@
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import { appRouter } from './root-router';
-import express from 'express';
+import express, { Express } from 'express';
 
 (BigInt.prototype as any).toJSON = function() {
   return Number(this);
 };
 
-const app = express();
+const app: Express = express();
 const PORT = process.env.PORT || 3000;
 
 app.use((req, res, next) => {
@@ -21,7 +21,18 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-app.use('/api', createExpressMiddleware({
+app.get('/health', async (req, res) => {
+  try {
+    const { getGlobalDatabase } = await import('./db');
+    const db = getGlobalDatabase();
+    await db.connect();
+    res.json({ status: 'ok', database: 'connected' });
+  } catch {
+    res.json({ status: 'ok', database: 'disconnected' });
+  }
+});
+
+app.use('/trpc', createExpressMiddleware({
   router: appRouter,
   createContext: () => ({}),
 }));

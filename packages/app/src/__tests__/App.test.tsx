@@ -75,7 +75,7 @@ describe('App Integration', () => {
     });
     (useGetRecommendations as any).mockReturnValue({
       isLoading: false,
-      data: null,
+      data: [],
       error: null,
     });
   });

@@ -1,8 +1,19 @@
 {
-  "name": "osu-recommender-server",
+  "name": "@osu-recommender/server",
   "version": "0.1.0",
   "description": "Backend API for osu! beatmap recommender",
   "main": "dist/index.js",
+  "types": "dist/root-router.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/root-router.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./root-router": {
+      "types": "./dist/root-router.d.ts",
+      "default": "./dist/root-router.js"
+    }
+  },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "build": "tsc",
@@ -15,9 +26,9 @@
   },
   "dependencies": {
     "@duckdb/node-api": "^1.4.4-r.1",
-    "@trpc/client": "^11.0.0",
-    "@trpc/react-query": "^11.0.0",
-    "@trpc/server": "^11.0.0",
+    "@trpc/client": "11.10.0",
+    "@trpc/react-query": "11.10.0",
+    "@trpc/server": "11.10.0",
     "cors": "^2.8.6",
     "express": "^4.18.2",
     "zod": "^4.3.6"

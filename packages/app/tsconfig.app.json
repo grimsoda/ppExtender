@@ -16,6 +16,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Path aliases for monorepo */
+    "baseUrl": ".",
+    "paths": {
+      "@osu-recommender/server": ["../server/dist/root-router.d.ts"],
+      "@osu-recommender/server/*": ["../server/dist/*.d.ts"]
+    },
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

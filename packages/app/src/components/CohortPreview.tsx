@@ -6,6 +6,9 @@ import { useGetBeatmapPlays } from '../api-hooks';
 interface Play {
   scoreId?: number;
   userId: number;
+  username?: string;
+  globalRank?: number | null;
+  playRank?: number | null;
   pp: number;
   accuracy: number;
   score: number;
@@ -48,6 +51,7 @@ interface CohortPreviewProps {
     topPlayers: Array<{
       userId: number;
       username: string;
+      globalRank?: number | null;
       pp: number;
       accuracy: number;
     }>;
@@ -188,6 +192,9 @@ export function CohortPreview({ cohort, beatmapId, mods, topK }: CohortPreviewPr
       y: play.accuracy,
       scoreId: play.scoreId,
       userId: play.userId,
+      username: play.username,
+      globalRank: play.globalRank,
+      playRank: play.playRank,
       score: play.score,
       mods: play.mods,
       hasCl: hasClassicMod(play.mods),
@@ -307,10 +314,18 @@ export function CohortPreview({ cohort, beatmapId, mods, topK }: CohortPreviewPr
               tooltip={({ node }) => {
                 if (!node.data) return null;
                 const data = node.data as any;
+                const displayName = data.username || `User ${data.userId}`;
+                const globalRankText = data.globalRank ? `(Global #${data.globalRank.toLocaleString()})` : '';
+                const playRankText = data.playRank ? `~#${data.playRank} top play` : '';
                 return (
-                  <div className="bg-white p-3 rounded shadow-lg border border-gray-200 min-w-[200px]">
+                  <div className="bg-white p-3 rounded shadow-lg border border-gray-200 min-w-[220px]">
                     <div className="border-b border-gray-200 pb-2 mb-2">
-                      <p className="text-sm font-semibold text-gray-900">User {data.userId}</p>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <p className="text-sm font-semibold text-gray-900">{displayName}</p>
+                        {globalRankText && (
+                          <span className="text-xs text-gray-500">{globalRankText}</span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span
                           className="text-sm font-bold px-2 py-0.5 rounded"
@@ -327,6 +342,9 @@ export function CohortPreview({ cohort, beatmapId, mods, topK }: CohortPreviewPr
                           </span>
                         )}
                         <span className="text-sm text-gray-600">{data.score?.toLocaleString()} pts</span>
+                        {playRankText && (
+                          <span className="text-xs text-gray-500 ml-auto">{playRankText}</span>
+                        )}
                       </div>
                     </div>
 
@@ -449,19 +467,40 @@ export function CohortPreview({ cohort, beatmapId, mods, topK }: CohortPreviewPr
         <h3 className="text-sm font-medium text-gray-700 mb-3">Top Players</h3>
         <div className="space-y-2">
           {cohort.topPlayers && cohort.topPlayers.length > 0 ? (
-            cohort.topPlayers.map((player) => (
-              <div 
-                key={player.userId} 
-                className="flex items-center justify-between p-2 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer"
-                onClick={() => window.open(`https://osu.ppy.sh/users/${player.userId}`, '_blank')}
-              >
-                <span className="font-medium">{player.username}</span>
-                <div className="text-sm text-gray-600">
-                  <span>{player.pp.toFixed(2)} pp</span>
-                  <span className="ml-2">{player.accuracy.toFixed(2)}%</span>
+            cohort.topPlayers.map((player, index) => {
+              const matchingPlay = cohort.plays?.find(
+                (play) => play.userId === player.userId && play.pp === player.pp
+              );
+              return (
+                <div
+                  key={player.userId}
+                  className="flex items-center justify-between p-2 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer"
+                  onClick={() => {
+                    if (matchingPlay?.scoreId) {
+                      window.open(`https://osu.ppy.sh/scores/${matchingPlay.scoreId}`, '_blank');
+                    } else {
+                      window.open(`https://osu.ppy.sh/users/${player.userId}`, '_blank');
+                    }
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-400 w-5">#{index + 1}</span>
+                    <div>
+                      <span className="font-medium">{player.username}</span>
+                      {player.globalRank && (
+                        <span className="text-xs text-gray-500 ml-2">
+                          (Global #{player.globalRank.toLocaleString()})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-600 text-right">
+                    <div>{player.pp.toFixed(2)} pp</div>
+                    <div className="text-xs">{player.accuracy.toFixed(2)}%</div>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <p className="text-sm text-gray-500">No top players data available</p>
           )}

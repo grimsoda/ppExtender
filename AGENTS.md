@@ -10,6 +10,9 @@ This document captures key technical decisions and learnings from the osu! Recom
 4. [Parquet Export Structure](#parquet-export-structure)
 5. [Database Schema Mapping](#database-schema-mapping)
 6. [Import Progress Monitoring](#import-progress-monitoring)
+7. [Tailwind CSS v4 Syntax Change](#tailwind-css-v4-syntax-change)
+8. [Bun Test Runner Gotcha](#bun-test-runner-gotcha)
+9. [tRPC + Express Route Conflicts](#trpc--express-route-conflicts)
 
 ---
 
@@ -491,3 +494,82 @@ alias bt='bun run test'
 ### "Cannot find parquet files"
 **Cause**: Looking in `table/*.parquet` but files are in `table/data.parquet/*.parquet`
 **Fix**: Update glob pattern to include `data.parquet` subdirectory
+
+---
+
+## tRPC + Express Route Conflicts
+
+### The Deviation
+
+**Standard Practice**: Mount tRPC middleware at `/api` for clean URLs.
+
+**What We Learned**: tRPC middleware mounted at `/api` intercepts ALL requests to `/api/*`, conflicting with REST endpoints.
+
+### The Problem
+
+```typescript
+// WRONG - tRPC intercepts /api/cohort requests
+app.use('/api', createExpressMiddleware({ router: appRouter }));
+app.post('/api/cohort', handler);  // Never reached!
+```
+
+**Symptom**: REST endpoints return 404 because tRPC tries to handle them first.
+
+### The Solution
+
+Mount tRPC at a different path (e.g., `/trpc`) to avoid conflicts:
+
+```typescript
+// CORRECT - tRPC at /trpc, REST at /api
+app.use('/trpc', createExpressMiddleware({ router: appRouter }));
+app.post('/api/cohort', handler);  // Works correctly
+```
+
+Or fully migrate to tRPC and remove REST endpoints:
+
+```typescript
+// tRPC-only architecture
+app.use('/trpc', createExpressMiddleware({ router: appRouter }));
+// No REST endpoints needed
+```
+
+### Frontend Client Configuration
+
+When tRPC is at `/trpc`:
+
+```typescript
+// packages/app/src/lib/trpc.ts
+export const trpcClient = trpc.createClient({
+  links: [
+    httpBatchLink({
+      url: `${API_URL}/trpc`,  // Note: /trpc not /api
+    }),
+  ],
+});
+```
+
+### React Query Integration
+
+tRPC React hooks use TanStack Query internally:
+
+```typescript
+// packages/app/src/api-hooks.ts
+export function useGetCohort(beatmap_id: number) {
+  return trpc.recommender.getCohort.useQuery(
+    { beatmap_id },
+    {
+      enabled: !!beatmap_id,
+      select: (data) => ({
+        // Transform snake_case to camelCase for component compatibility
+        size: data.cohort_size,
+        ppDistribution: data.pp_distribution,
+      }),
+    }
+  );
+}
+```
+
+### Reference
+
+- [tRPC Express Adapter](https://trpc.io/docs/server/adapters/express)
+- [tRPC React Query](https://trpc.io/docs/client/react)

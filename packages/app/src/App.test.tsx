@@ -30,7 +30,7 @@ vi.mock('./api-hooks', () => ({
   }),
   useGetRecommendations: () => ({
     isLoading: false,
-    data: null,
+    data: [],
     error: null,
   }),
 }));

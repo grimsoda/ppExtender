@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { SeedInput } from './components/SeedInput';
 import { CohortPreview } from './components/CohortPreview';
 import type { Play } from './components/CohortPreview';
@@ -54,31 +54,35 @@ function App() {
     beatmapId: number;
     mods: string[];
     topK: number;
+    ppLower: number;
+    ppUpper: number;
   } | null>(null);
 
-  const handleCohortData = (data: CohortData) => {
+  const handleCohortData = useCallback((data: CohortData) => {
     setCohortData(data);
-  };
+  }, []);
 
-  const handleBeatmapParams = (params: {
+  const handleBeatmapParams = useCallback((params: {
     beatmapId: number;
     mods: string[];
     topK: number;
+    ppLower: number;
+    ppUpper: number;
   }) => {
     setBeatmapParams(params);
-  };
+  }, []);
 
-  const handleError = (errorMessage: string) => {
+  const handleError = useCallback((errorMessage: string) => {
     setError(errorMessage);
-  };
+  }, []);
 
-  const handleSubmitStart = () => {
+  const handleSubmitStart = useCallback(() => {
     setError(null);
-  };
+  }, []);
 
-  const handleSelectRecommendation = (recommendation: Recommendation) => {
+  const handleSelectRecommendation = useCallback((recommendation: Recommendation) => {
     console.log('Selected recommendation:', recommendation);
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -167,8 +171,8 @@ function App() {
 
               <RecommendationsList
                 beatmapId={beatmapParams?.beatmapId || 0}
-                pp_lower={0}
-                pp_upper={10000}
+                pp_lower={beatmapParams?.ppLower ?? 0}
+                pp_upper={beatmapParams?.ppUpper ?? 10000}
                 mods={beatmapParams?.mods || []}
                 top_k={beatmapParams?.topK || 200}
                 onSelect={handleSelectRecommendation}

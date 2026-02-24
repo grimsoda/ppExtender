@@ -32,7 +32,7 @@ export function RecommendationsList({
   top_k = 200,
   onSelect,
 }: RecommendationsListProps) {
-  const { data: recommendations = [], isLoading, error } = useGetRecommendations(
+  const { data, isLoading, error } = useGetRecommendations(
     beatmapId,
     {
       pp_lower,
@@ -42,6 +42,7 @@ export function RecommendationsList({
       limit: 20,
     }
   );
+  const recommendations = data ?? [];
 
   if (isLoading) {
     return (
